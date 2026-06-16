@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>古物台帳</title>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #2e2e2e;
+    --accent: #e8a020;
+    --text: #e8e8e8;
+    --text2: #999;
+    --danger: #c03030;
+    --in-badge: #1a5a9a;
+    --out-badge: #9a2020;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh; }
+
+  header { background: var(--surface); border-bottom: 2px solid var(--accent); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  header h1 { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 0.05em; }
+  header span { font-size: 11px; color: var(--text2); }
+
+  nav { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); }
+  nav button { flex: 1; padding: 10px 4px; background: none; border: none; border-bottom: 3px solid transparent; color: var(--text2); font-size: 12px; cursor: pointer; }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab { display: none; padding: 12px; }
+  .tab.active { display: block; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; color: var(--accent); margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 3px; }
+  .field input, .field select, .field textarea {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); padding: 8px 10px; font-size: 13px;
+    outline: none; font-family: inherit; -webkit-appearance: none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+  .field textarea { resize: vertical; min-height: 56px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; margin-bottom: 10px; }
+  .badge.in { background: var(--in-badge); }
+  .badge.out { background: var(--out-badge); }
+  .next-id { font-size: 11px; color: var(--text2); font-family: monospace; margin-bottom: 10px; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 9px 16px; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn:active { opacity: 0.7; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-group { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  /* フィルター */
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .filter-bar select, .filter-bar input { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 7px 10px; font-size: 12px; outline: none; -webkit-appearance: none; }
+  .filter-bar input { flex: 1; min-width: 100px; }
+
+  /* 一覧カード */
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .entry { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; cursor: pointer; }
+  .entry:hover { border-color: var(--accent); }
+  .entry.in { border-left: 3px solid var(--in-badge); }
+  .entry.out { border-left: 3px solid var(--out-badge); }
+  .e-top { display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .e-id { font-family: monospace; font-size: 11px; color: var(--text2); }
+  .e-date { font-size: 11px; color: var(--text2); }
+  .e-cat { font-size: 11px; color: var(--text2); }
+  .e-name { font-size: 13px; font-weight: 600; margin: 2px 0; }
+  .e-partner { font-size: 12px; color: var(--text2); }
+  .e-price { font-size: 12px; color: var(--accent); margin-top: 2px; }
+  .sold-tag { font-size: 10px; background: #444; color: #aaa; padding: 1px 5px; border-radius: 8px; margin-left: 5px; }
+
+  /* モーダル */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200; overflow-y: auto; }
+  .overlay.open { display: flex; align-items: flex-start; justify-content: center; padding: 16px; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 480px; padding: 16px; }
+  .modal h3 { font-size: 14px; color: var(--accent); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .drow { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .drow:last-child { border-bottom: none; }
+  .dlabel { color: var(--text2); min-width: 90px; }
+  .dval { text-align: right; word-break: break-all; }
+
+  /* 統計 */
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; text-align: center; }
+  .stat-n { font-size: 24px; font-weight: 700; color: var(--accent); }
+  .stat-l { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+  .sync-box { background: var(--surface2); border-radius: 4px; padding: 8px 10px; font-size: 12px; color: var(--text2); margin-bottom: 10px; min-height: 34px; line-height: 1.5; }
+  .sync-box.ok { color: #4a4; }
+  .sync-box.err { color: #c44; }
+  .sync-box.loading { color: var(--accent); }
+
+  /* ローディング */
+  .loading { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 500; align-items: center; justify-content: center; color: var(--accent); font-size: 14px; }
+  .loading.show { display: flex; }
+
+  /* トースト */
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(80px); background: #222; border: 1px solid var(--border); color: var(--text); padding: 9px 20px; border-radius: 18px; font-size: 13px; z-index: 999; transition: transform .3s; white-space: nowrap; }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast.ok { border-color: #2a7; color: #2a7; }
+  #toast.err { border-color: #c44; color: #c44; }
+
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--border); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚙ 古物台帳</h1>
+  <span id="hCount">-</span>
+</header>
+
+<nav>
+  <button class="active" onclick="tab('t-in',this)">受入登録</button>
+  <button onclick="tab('t-out',this)">払出登録</button>
+  <button onclick="tab('t-list',this);renderList()">台帳一覧</button>
+  <button onclick="tab('t-manage',this);updateStats()">データ管理</button>
+</nav>
+
+<!-- ===== 受入登録 ===== -->
+<div id="t-in" class="tab active">
+  <div class="card">
+    <span class="badge in">受入（買受）</span>
+    <div class="next-id" id="nextInId">受入番号: 計算中...</div>
+    <h2>受入（買受）登録</h2>
+
+    <div class="field"><label>取引年月日 *</label><input type="date" id="in-date"></div>
+    <div class="field">
+      <label>品目・種別 *</label>
+      <select id="in-category">
+        <option value="">選択してください</option>
+        <option>自動二輪車</option><option>原動機付自転車</option><option>バイク部品</option>
+        <option>自動車</option><option>自動車部品</option><option>その他</option>
+      </select>
+    </div>
+    <div class="field"><label>メーカー</label><input type="text" id="in-maker" placeholder="例：HONDA"></div>
+    <div class="field"><label>車名・品名 *</label><input type="text" id="in-model" placeholder="例：スーパーカブ110"></div>
+    <div class="field"><label>車台番号（フレームNo）</label><input type="text" id="in-frame" placeholder="例：JA44-1002305"></div>
+    <div class="row2">
+      <div class="field"><label>年式</label><input type="text" inputmode="numeric" id="in-age" placeholder="例：2020"></div>
+      <div class="field"><label>数量</label><input type="text" inputmode="numeric" id="in-qty" value="1"></div>
+    </div>
+    <div class="field">
+      <label>取得価格（円）</label>
+      <input type="text" inputmode="numeric" id="in-price" placeholder="0" oninput="showInPrice()">
+      <div id="in-price-disp" style="font-size:18px;font-weight:700;color:var(--accent);margin-top:6px;min-height:24px;text-align:right"></div>
+    </div>
+
+    <div class="field">
+      <label>相手方クイック入力</label>
+      <div id="partner-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:2px"></div>
+    </div>
+    <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="in-name" placeholder="例：株式会社 モトレボ 渡部伸正"></div>
+    <div class="field"><label>住所</label><input type="text" id="in-address" placeholder="例：埼玉県所沢市中富280-3"></div>
+    <div class="field"><label>職業</label><input type="text" id="in-job" placeholder="例：古物商"></div>
+    <div class="field"><label>年齢</label><input type="text" inputmode="numeric" id="in-age2" placeholder="法人の場合は空欄"></div>
+    <div class="row2">
+      <div class="field">
+        <label>本人確認方法</label>
+        <select id="in-idMethod">
+          <option value="">選択</option>
+          <option>古物商同士の取引</option>
+          <option>運転免許証</option>
+          <option>マイナンバーカード</option>
+          <option>パスポート</option>
+          <option>その他</option>
+        </select>
+      </div>
+      <div class="field"><label>書類番号</label><input type="text" id="in-idNo"></div>
+    </div>
+    <div class="field"><label>備考</label><textarea id="in-memo"></textarea></div>
+
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="submitIn()">GASに保存</button>
+      <button class="btn btn-secondary" onclick="clearIn()">クリア</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 払出登録 ===== -->
+<div id="t-out" class="tab">
+  <div class="card">
+    <span class="badge out">払出（売却）</span>
+    <div class="next-id" id="nextOutId">払出番号: 計算中...</div>
+    <h2>払出（売却）登録</h2>
+
+    <div class="field"><label>取引年月日 *</label><input type="date" id="out-date"></div>
+    <div class="field">
+      <label>対応する受入番号（在庫から選択）</label>
+      <select id="out-linked"><option value="">（紐付けなし）</option></select>
+    </div>
+    <div class="field">
+      <label>品目・種別 *</label>
+      <select id="out-category">
+        <option value="">選択してください</option>
+        <option>自動二輪車</option><option>原動機付自転車</option><option>バイク部品</option>
+        <option>自動車</option><option>自動車部品</option><option>その他</option>
+      </select>
+    </div>
+    <div class="field"><label>メーカー</label><input type="text" id="out-maker"></div>
+    <div class="field"><label>車名・品名 *</label><input type="text" id="out-model"></div>
+    <div class="field"><label>車台番号</label><input type="text" id="out-frame"></div>
+    <div class="row2">
+      <div class="field"><label>年式</label><input type="text" inputmode="numeric" id="out-age"></div>
+      <div class="field"><label>数量</label><input type="text" inputmode="numeric" id="out-qty" value="1"></div>
+    </div>
+    <div class="field">
+      <label>合計金額（円） *</label>
+      <input type="text" inputmode="numeric" id="out-total" placeholder="0" oninput="calcOutPrice()">
+    </div>
+    <div class="field">
+      <label>作業費・サービス料金</label>
+      <div id="service-rows" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
+      <button type="button" class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="addServiceRow()">＋ 項目追加</button>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px">
+        <span>合計金額</span><span id="disp-total">¥ 0</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px">
+        <span>作業費計</span><span id="disp-service">¥ 0</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;color:var(--accent);border-top:1px solid var(--border);padding-top:6px;margin-top:2px">
+        <span>本体金額</span><span id="disp-body">¥ 0</span>
+      </div>
+    </div>
+    <input type="hidden" id="out-price">
+
+    <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="out-name"></div>
+    <div class="field"><label>住所</label><input type="text" id="out-address"></div>
+    <div class="field"><label>職業</label><input type="text" id="out-job"></div>
+    <div class="field"><label>年齢</label><input type="text" inputmode="numeric" id="out-age2"></div>
+    <div class="row2">
+      <div class="field">
+        <label>本人確認方法</label>
+        <select id="out-idMethod">
+          <option value="">選択</option>
+          <option>古物商同士の取引</option>
+          <option>運転免許証</option>
+          <option>マイナンバーカード</option>
+          <option>パスポート</option>
+          <option>その他</option>
+        </select>
+      </div>
+      <div class="field"><label>書類番号</label><input type="text" id="out-idNo"></div>
+    </div>
+    <div class="field"><label>備考</label><textarea id="out-memo"></textarea></div>
+
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="submitOut()">GASに保存</button>
+      <button class="btn btn-secondary" onclick="clearOut()">クリア</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 台帳一覧 ===== -->
+<div id="t-list" class="tab">
+  <div class="filter-bar">
+    <select id="f-kubun" onchange="renderList()">
+      <option value="">全て</option>
+      <option value="受入">受入</option>
+      <option value="払出">払出</option>
+    </select>
+    <select id="f-cat" onchange="renderList()">
+      <option value="">全カテゴリ</option>
+      <option>自動二輪車</option><option>原動機付自転車</option><option>バイク部品</option>
+      <option>自動車</option><option>自動車部品</option><option>その他</option>
+    </select>
+    <input type="text" id="f-text" placeholder="車名・相手方で検索" oninput="renderList()">
+  </div>
+  <div id="list-body" class="list"><p style="color:var(--text2);text-align:center;padding:20px">読み込み中...</p></div>
+</div>
+
+<!-- ===== データ管理 ===== -->
+<div id="t-manage" class="tab">
+  <div class="stats">
+    <div class="stat"><div class="stat-n" id="s-in">-</div><div class="stat-l">受入件数</div></div>
+    <div class="stat"><div class="stat-n" id="s-out">-</div><div class="stat-l">払出件数</div></div>
+    <div class="stat"><div class="stat-n" id="s-stock">-</div><div class="stat-l">在庫件数</div></div>
+    <div class="stat"><div class="stat-n" id="s-total">-</div><div class="stat-l">総件数</div></div>
+  </div>
+
+  <div class="card">
+    <h2>GAS同期</h2>
+    <div class="sync-box" id="syncBox">未確認</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px">GASスプレッドシートからデータを取得してローカルに保存します。</p>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="syncFromGAS()">GASから全件取得</button>
+      <button class="btn btn-secondary" onclick="pingGAS()">接続確認</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>CSVエクスポート</h2>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="exportCSV('受入')">受入CSV</button>
+      <button class="btn btn-secondary" onclick="exportCSV('払出')">払出CSV</button>
+      <button class="btn btn-secondary" onclick="exportCSV('全て')">全件CSV</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ローカルデータ削除</h2>
+    <p style="font-size:12px;color:#c88;margin-bottom:8px">注意：取り消せません。GASのデータは残ります。</p>
+    <button class="btn btn-danger" onclick="clearLocal()">ローカル全削除</button>
+  </div>
+</div>
+
+<!-- 詳細モーダル -->
+<div class="overlay" id="overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <h3 id="m-title">詳細</h3>
+    <div id="m-body"></div>
+    <div class="btn-group" style="margin-top:14px">
+      <button class="btn btn-danger" onclick="deleteEntry()">ローカルから削除</button>
+      <button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading" id="loading"><span>処理中...</span></div>
+<div id="toast"></div>
+
+<script>
+const GAS = 'https://script.google.com/macros/s/AKfycbyq_MqD2A3a1cRXZxxqcv3GDfQdQ_ybmPRZH_DFbwo88Dr7UU0gE9OIIH8X2wFkdlib/exec';
+const LS = 'kobutu_v2';
+
+// ===== ローカルストレージ =====
+function load() { try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e) { return []; } }
+function save(d) { localStorage.setItem(LS, JSON.stringify(d)); }
+
+// ===== UID =====
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+
+// ===== 採番 =====
+// 既存GASデータはuid=数値でinIdを持つ。新規はuid=文字列、inIdを独自管理
+function nextSeq(kubun) {
+  const data = load();
+  const isIn = kubun === '受入';
+  const filtered = data.filter(d => isIn ? isInKubun(d.kubun) : isOutKubun(d.kubun));
+  if (!filtered.length) return isIn ? 101 : 1; // 受入は既存101件以降から、払出は既存から
+  const nums = filtered.map(d => {
+    const n = parseInt(d.inId || d.outId || 0);
+    return isNaN(n) ? 0 : n;
+  });
+  return Math.max(...nums) + 1;
+}
+
+function isInKubun(k) { return k && k.includes('受入'); }
+function isOutKubun(k) { return k && k.includes('払出'); }
+
+function updateNextIds() {
+  const data = load();
+  const inRecs = data.filter(d => isInKubun(d.kubun));
+  const outRecs = data.filter(d => isOutKubun(d.kubun));
+  const inNums = inRecs.map(d => parseInt(d.inId||0)).filter(n=>!isNaN(n));
+  const outNums = outRecs.map(d => parseInt(d.inId||d.outId||0)).filter(n=>!isNaN(n));
+  const nextIn = inNums.length ? Math.max(...inNums)+1 : 1;
+  const nextOut = outNums.length ? Math.max(...outNums)+1 : 1;
+  document.getElementById('nextInId').textContent = '受入番号: ' + nextIn;
+  document.getElementById('nextOutId').textContent = '払出番号: ' + nextOut;
+}
+
+function updateHeaderCount() {
+  const d = load();
+  const ic = d.filter(r=>isInKubun(r.kubun)).length;
+  const oc = d.filter(r=>isOutKubun(r.kubun)).length;
+  document.getElementById('hCount').textContent = `受入${ic} 払出${oc}`;
+}
+
+// feature = "メーカー\n車名\nフレームNo"
+function buildFeature(maker, model, frame) {
+  return [maker, model, frame].filter(Boolean).join('\n');
+}
+function parseFeature(feature) {
+  const parts = (feature || '').split('\n');
+  return { maker: parts[0]||'', model: parts[1]||'', frame: parts[2]||'' };
+}
+
+// ===== タブ =====
+function tab(id, btn) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+  if (id === 't-out') updateLinkedSelect();
+}
+
+// ===== 受入保存 =====
+function submitIn() {
+  const data = load();
+  const inRecs = data.filter(d=>isInKubun(d.kubun));
+  const inNums = inRecs.map(d=>parseInt(d.inId||0)).filter(n=>!isNaN(n));
+  const nextIn = inNums.length ? Math.max(...inNums)+1 : 1;
+
+  const rec = {
+    uid: uid(),
+    id: nextIn,
+    inId: nextIn,
+    date: v('in-date'),
+    kubun: '受入（買受）',
+    category: v('in-category'),
+    qty: v('in-qty') || '1',
+    feature: buildFeature(v('in-maker'), v('in-model'), v('in-frame')),
+    price: v('in-price'),
+    age: v('in-age2'),
+    idMethod: v('in-idMethod'),
+    idNo: v('in-idNo'),
+    name: v('in-name'),
+    address: v('in-address'),
+    job: v('in-job'),
+    memo: v('in-memo'),
+    sold: false,
+    soldEntryId: '',
+    createdAt: new Date().toISOString()
+  };
+
+  if (!rec.date || !rec.category || !v('in-model') || !rec.name) {
+    toast('必須項目（日付・種別・車名・相手方）を入力してください', 'err'); return;
+  }
+  gasPost(rec, function(res) {
+    if (res.status === 'ok') {
+      const all = load(); all.push(rec); save(all);
+      updateNextIds(); updateHeaderCount();
+      toast('受入 ' + nextIn + ' を保存しました', 'ok');
+      clearIn();
+    } else {
+      toast('エラー: ' + (res.message||'不明'), 'err');
+    }
+  });
+}
+
+// ===== 払出保存 =====
+function submitOut() {
+  const data = load();
+  const outRecs = data.filter(d=>isOutKubun(d.kubun));
+  const outNums = outRecs.map(d=>parseInt(d.inId||d.outId||0)).filter(n=>!isNaN(n));
+  const nextOut = outNums.length ? Math.max(...outNums)+1 : 1;
+
+  calcOutPrice(); // hidden の out-price を最新化
+  const linkedInId = v('out-linked');
+  const rec = {
+    uid: uid(),
+    id: nextOut,
+    inId: nextOut,
+    date: v('out-date'),
+    kubun: '払出（売渡）',
+    category: v('out-category'),
+    qty: v('out-qty') || '1',
+    feature: buildFeature(v('out-maker'), v('out-model'), v('out-frame')),
+    price: v('out-price'),
+    age: v('out-age2'),
+    idMethod: v('out-idMethod'),
+    idNo: v('out-idNo'),
+    name: v('out-name'),
+    address: v('out-address'),
+    job: v('out-job'),
+    memo: [v('out-memo'), getServiceMemo()].filter(Boolean).join(' / '),
+    serviceFee: (parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,''))||0) - (parseInt(document.getElementById('out-price').value)||0),
+    totalPrice: parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,''))||0,
+    linkedInId: linkedInId,
+    createdAt: new Date().toISOString()
+  };
+
+  if (!rec.date || !rec.category || !v('out-model') || !rec.name) {
+    toast('必須項目（日付・種別・車名・相手方）を入力してください', 'err'); return;
+  }
+  gasPost(rec, function(res) {
+    if (res.status === 'ok') {
+      const all = load();
+      all.push(rec);
+      // 受入に売済マーク
+      if (linkedInId) {
+        const idx = all.findIndex(r => String(r.inId) === String(linkedInId) && isInKubun(r.kubun));
+        if (idx >= 0) { all[idx].sold = true; all[idx].soldEntryId = rec.uid; }
+      }
+      save(all);
+      updateNextIds(); updateHeaderCount();
+      toast('払出 ' + nextOut + ' を保存しました', 'ok');
+      clearOut();
+    } else {
+      toast('エラー: ' + (res.message||'不明'), 'err');
+    }
+  });
+}
+
+// ===== JSONP送信 =====
+function gasPost(rec, cb) {
+  showLoad(true);
+  const cbName = 'cb_' + Date.now();
+  window[cbName] = function(res) {
+    cleanup(); showLoad(false); cb(res);
+  };
+  function cleanup() {
+    const s = document.getElementById('s_'+cbName); if(s) s.remove();
+    delete window[cbName];
+  }
+  const url = GAS + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec)) + '&callback=' + cbName;
+  const s = document.createElement('script');
+  s.id = 's_'+cbName; s.src = url;
+  s.onerror = function() { cleanup(); showLoad(false); toast('GAS接続エラー','err'); };
+  setTimeout(()=>{ cleanup(); showLoad(false); toast('タイムアウト','err'); }, 15000);
+  document.head.appendChild(s);
+}
+
+// ===== GAS全件取得 =====
+function syncFromGAS() {
+  setSyncBox('取得中...', 'loading'); showLoad(true);
+  const cbName = 'cb_sync_' + Date.now();
+  window[cbName] = function(res) {
+    cleanup(); showLoad(false);
+    if (res && res.entries && Array.isArray(res.entries)) {
+      const gasData = res.entries;
+      const local = load();
+      const localUIDs = new Set(local.map(r => String(r.uid)));
+      let added = 0;
+      gasData.forEach(row => {
+        if (!localUIDs.has(String(row.uid))) {
+          // sold フィールドがなければ補完
+          if (row.sold === undefined) row.sold = false;
+          if (row.soldEntryId === undefined) row.soldEntryId = '';
+          local.push(row); added++;
+        }
+      });
+      save(local);
+      updateNextIds(); updateHeaderCount();
+      setSyncBox('同期完了 ' + gasData.length + '件取得、' + added + '件追加（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+      toast(added + '件追加しました', 'ok');
+      buildPartnerButtons();
+    } else {
+      setSyncBox('取得失敗: ' + JSON.stringify(res), 'err');
+      toast('取得失敗', 'err');
+    }
+  };
+  function cleanup() { const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
+  const url = GAS + '?action=getAll&callback=' + cbName;
+  const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
+  s.onerror=function(){ cleanup(); showLoad(false); setSyncBox('接続エラー','err'); };
+  setTimeout(()=>{ cleanup(); showLoad(false); setSyncBox('タイムアウト','err'); }, 20000);
+  document.head.appendChild(s);
+}
+
+function pingGAS() {
+  setSyncBox('接続確認中...', 'loading');
+  const cbName = 'cb_ping_' + Date.now();
+  window[cbName] = function(res) {
+    cleanup();
+    if (res && (res.status==='ok'||res.message==='alive')) {
+      setSyncBox('✓ GAS接続OK（' + new Date().toLocaleTimeString('ja-JP') + '）', 'ok');
+    } else {
+      setSyncBox('応答: ' + JSON.stringify(res), 'err');
+    }
+  };
+  function cleanup() { const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
+  const url = GAS + '?action=ping&callback=' + cbName;
+  const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
+  s.onerror=function(){ cleanup(); setSyncBox('接続エラー','err'); };
+  setTimeout(()=>{ cleanup(); }, 10000);
+  document.head.appendChild(s);
+}
+
+// ===== 台帳一覧 =====
+function renderList() {
+  const kubun = document.getElementById('f-kubun').value;
+  const cat = document.getElementById('f-cat').value;
+  const txt = document.getElementById('f-text').value.toLowerCase();
+
+  let data = load().filter(d => {
+    if (kubun === '受入' && !isInKubun(d.kubun)) return false;
+    if (kubun === '払出' && !isOutKubun(d.kubun)) return false;
+    if (cat && d.category !== cat) return false;
+    if (txt) {
+      const f = parseFeature(d.feature);
+      const s = (f.model+f.maker+d.name+'').toLowerCase();
+      if (!s.includes(txt)) return false;
+    }
+    return true;
+  });
+
+  data.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+
+  const body = document.getElementById('list-body');
+  if (!data.length) { body.innerHTML='<p style="color:var(--text2);text-align:center;padding:20px">該当なし</p>'; return; }
+
+  const allData = load();
+  body.innerHTML = data.map(d => {
+    const f = parseFeature(d.feature);
+    const isIn = isInKubun(d.kubun);
+    const entryId = d.inId || d.id || '';
+    const soldFlag = isIn && allData.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(entryId));
+    return `<div class="entry ${isIn?'in':'out'}" onclick="showDetail('${d.uid}')">
+      <div class="e-top">
+        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}</span>
+        <span class="e-date">${d.date||''}</span>
+      </div>
+      <div class="e-cat">${d.category||''}</div>
+      <div class="e-name">${[f.maker,f.model].filter(Boolean).join(' ')}</div>
+      <div class="e-partner">${isIn?'仕入先':'売却先'}：${d.name||''}</div>
+      <div class="e-price">${d.price?'¥'+Number(d.price).toLocaleString():''}</div>
+    </div>`;
+  }).join('');
+}
+
+// ===== 詳細モーダル =====
+let currentUID = null;
+function showDetail(u) {
+  const d = load().find(r => String(r.uid) === String(u));
+  if (!d) return;
+  currentUID = u;
+  const f = parseFeature(d.feature);
+  const isIn = isInKubun(d.kubun);
+  document.getElementById('m-title').textContent = (isIn?'受入':'払出') + '-' + (d.inId||d.id||'') + '　' + d.kubun;
+  const rows = [
+    ['区分', d.kubun],
+    ['取引日', d.date],
+    ['品目', d.category],
+    ['メーカー', f.maker],
+    ['車名・品名', f.model],
+    ['車台番号', f.frame],
+    ['年式', d.age],
+    ['数量', d.qty],
+    ['価格', d.price ? '¥'+Number(d.price).toLocaleString() : ''],
+    ['相手方', d.name],
+    ['住所', d.address],
+    ['職業', d.job],
+    ['年齢', d.age],
+    ['確認方法', d.idMethod],
+    ['書類番号', d.idNo],
+    ['備考', d.memo],
+    isOutKubun(d.kubun) ? ['対応受入番号', d.linkedInId] : null,
+    ['売却済', (isInKubun(d.kubun) && load().some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.inId||d.id))) ? 'はい' : 'いいえ'],
+  ].filter(r => r && r[1]);
+
+  document.getElementById('m-body').innerHTML = rows.map(([l,v])=>
+    `<div class="drow"><span class="dlabel">${l}</span><span class="dval">${v}</span></div>`
+  ).join('');
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('overlay')) {
+    document.getElementById('overlay').classList.remove('open');
+    currentUID = null;
+  }
+}
+
+function deleteEntry() {
+  if (!currentUID || !confirm('ローカルから削除します（GASは変わりません）')) return;
+  const data = load();
+  const idx = data.findIndex(r => String(r.uid) === String(currentUID));
+  if (idx < 0) return;
+  const removed = data.splice(idx, 1)[0];
+  if (isOutKubun(removed.kubun) && removed.linkedInId) {
+    const ii = data.findIndex(r => String(r.inId) === String(removed.linkedInId) && isInKubun(r.kubun));
+    if (ii >= 0) { data[ii].sold = false; data[ii].soldEntryId = ''; }
+  }
+  save(data);
+  closeModal(); updateNextIds(); updateHeaderCount(); renderList();
+  toast('削除しました', 'ok');
+}
+
+// ===== 払出フォーム：在庫選択肢 =====
+function updateLinkedSelect() {
+  const all = load();
+  const data = all.filter(d => isInKubun(d.kubun) && !all.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.inId||d.id)));
+  const sel = document.getElementById('out-linked');
+  sel.innerHTML = '<option value="">（紐付けなし）</option>' +
+    data.map(d => {
+      const f = parseFeature(d.feature);
+      return `<option value="${d.inId||d.id}">${d.inId||d.id} — ${[f.maker,f.model].filter(Boolean).join(' ')}</option>`;
+    }).join('');
+}
+
+// ===== 業者マスタ（固定4件） =====
+const PARTNERS = [
+  { label: 'モトレボ',  name: '株式会社 モトレボ 渡部伸正', address: '埼玉県所沢市中富280-3',         job: '古物商', age: '',   idMethod: '古物商同士の取引', idNo: '' },
+  { label: '山崎紅梅',  name: '山崎 紅梅',                  address: '埼玉県白岡市小久喜５５６番地１', job: '古物商', age: '50', idMethod: '古物商同士の取引', idNo: '431100033182' },
+  { label: '川田商事',  name: '有限会社 川田商事',           address: '埼玉県熊谷市日向250番地',       job: '古物商', age: '',   idMethod: '運転免許証',       idNo: '' },
+  { label: "A's Wing", name: "A's Wing",                   address: '',                              job: '古物商', age: '',   idMethod: '古物商同士の取引', idNo: '' }
+];
+
+function buildPartnerButtons() {
+  const c = document.getElementById('partner-btns');
+  if (!c) return;
+  c.innerHTML = PARTNERS.map((p, i) =>
+    `<button type="button" class="btn btn-secondary" id="pbtn-${i}" style="font-size:12px;padding:6px 12px" onclick="fillPartner(${i})">${p.label}</button>`
+  ).join('');
+}
+
+function fillPartner(idx) {
+  const p = PARTNERS[idx];
+  if (!p) return;
+  document.getElementById('in-name').value     = p.name;
+  document.getElementById('in-address').value  = p.address;
+  document.getElementById('in-job').value      = p.job;
+  document.getElementById('in-age2').value     = p.age;
+  document.getElementById('in-idMethod').value = p.idMethod;
+  document.getElementById('in-idNo').value     = p.idNo;
+  PARTNERS.forEach((_, i) => {
+    const b = document.getElementById('pbtn-' + i);
+    if (b) { b.style.borderColor = i===idx ? 'var(--accent)' : ''; b.style.color = i===idx ? 'var(--accent)' : ''; }
+  });
+}
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('out-linked').addEventListener('change', function() {
+    const val = this.value;
+    if (!val) return;
+    const rec = load().find(r => String(r.inId||r.id) === String(val) && isInKubun(r.kubun));
+    if (!rec) return;
+    const f = parseFeature(rec.feature);
+    document.getElementById('out-category').value = rec.category || '';
+    document.getElementById('out-maker').value = f.maker;
+    document.getElementById('out-model').value = f.model;
+    document.getElementById('out-frame').value = f.frame;
+    document.getElementById('out-age').value = rec.age || '';
+  });
+  setToday();
+  updateNextIds();
+  updateHeaderCount();
+  buildPartnerButtons();
+});
+
+// ===== フォームクリア =====
+function v(id) { return (document.getElementById(id)?.value||'').trim(); }
+
+function clearIn() {
+  ['in-category','in-maker','in-model','in-frame','in-age','in-price','in-age2','in-idMethod','in-idNo','in-name','in-address','in-job','in-memo']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('in-qty').value='1';
+  document.getElementById('in-date').value = todayISO();
+}
+
+function clearOut() {
+  ['out-linked','out-category','out-maker','out-model','out-frame','out-age','out-total','out-price','out-age2','out-idMethod','out-idNo','out-name','out-address','out-job','out-memo']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('out-qty').value='1';
+  document.getElementById('out-date').value = todayISO();
+  document.getElementById('service-rows').innerHTML = '';
+  serviceRowCount = 0;
+  calcOutPrice();
+}
+
+function todayISO() { return new Date().toISOString().slice(0,10); }
+function setToday() {
+  document.getElementById('in-date').value = todayISO();
+  document.getElementById('out-date').value = todayISO();
+}
+
+// ===== 受入：金額表示 =====
+function showInPrice() {
+  const val = parseInt(document.getElementById('in-price').value.replace(/,/g,'')) || 0;
+  const el = document.getElementById('in-price-disp');
+  el.textContent = val ? '¥ ' + val.toLocaleString() : '';
+}
+
+// ===== 払出：作業費行の追加・削除・計算 =====
+let serviceRowCount = 0;
+
+function addServiceRow() {
+  serviceRowCount++;
+  const id = 'srow-' + serviceRowCount;
+  const div = document.createElement('div');
+  div.id = id;
+  div.style.cssText = 'display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center';
+  div.innerHTML =
+    '<input type="text" placeholder="例：オイル交換" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;outline:none;font-family:inherit">' +
+    '<input type="text" inputmode="numeric" placeholder="金額" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;outline:none;width:90px;text-align:right;font-family:inherit" oninput="calcOutPrice()">' +
+    '<button type="button" onclick="removeServiceRow(\'' + id + '\')" style="background:var(--danger);border:none;border-radius:4px;color:#fff;padding:6px 8px;font-size:12px;cursor:pointer;line-height:1">✕</button>';
+  document.getElementById('service-rows').appendChild(div);
+  calcOutPrice();
+}
+
+function removeServiceRow(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+  calcOutPrice();
+}
+
+function calcOutPrice() {
+  const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
+  let serviceSum = 0;
+  document.querySelectorAll('#service-rows > div').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const amt = parseInt((inputs[1]?.value||'').replace(/,/g,'')) || 0;
+    serviceSum += amt;
+  });
+  const body = Math.max(0, total - serviceSum);
+  document.getElementById('disp-total').textContent   = '¥ ' + total.toLocaleString();
+  document.getElementById('disp-service').textContent = '¥ ' + serviceSum.toLocaleString();
+  document.getElementById('disp-body').textContent    = '¥ ' + body.toLocaleString();
+  // hidden フィールドに本体金額をセット（台帳に記録する金額）
+  document.getElementById('out-price').value = body || '';
+}
+
+// サービス行のメモをまとめてmemoに付加する処理
+function getServiceMemo() {
+  const rows = [];
+  document.querySelectorAll('#service-rows > div').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const label = inputs[0]?.value?.trim() || '';
+    const amt   = parseInt((inputs[1]?.value||'').replace(/,/g,'')) || 0;
+    if (label || amt) rows.push(label + (amt ? '：¥'+amt.toLocaleString() : ''));
+  });
+  return rows.join('、');
+}
+
+// ===== 統計（在庫 = 受入件数 − 払出件数） =====
+function updateStats() {
+  const d = load();
+  const ic = d.filter(r=>isInKubun(r.kubun)).length;
+  const oc = d.filter(r=>isOutKubun(r.kubun)).length;
+  const sc = Math.max(0, ic - oc);
+  document.getElementById('s-in').textContent = ic;
+  document.getElementById('s-out').textContent = oc;
+  document.getElementById('s-stock').textContent = sc;
+  document.getElementById('s-total').textContent = d.length;
+}
+
+// ===== CSV =====
+function exportCSV(type) {
+  let data = load();
+  if (type==='受入') data = data.filter(d=>isInKubun(d.kubun));
+  else if (type==='払出') data = data.filter(d=>isOutKubun(d.kubun));
+  if (!data.length) { toast('データなし','err'); return; }
+  const keys = ['uid','id','inId','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','soldEntryId','linkedInId','createdAt'];
+  const csv = [keys.join(','), ...data.map(d=>keys.map(k=>'"'+String(d[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download = '古物台帳_'+type+'_'+todayISO().replace(/-/g,'')+'.csv';
+  a.click();
+}
+
+function clearLocal() {
+  if (!confirm('ローカルデータを全削除します。GASは変わりません。')) return;
+  localStorage.removeItem(LS);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  toast('削除しました','ok');
+}
+
+// ===== UI helpers =====
+function setSyncBox(msg, cls) {
+  const el = document.getElementById('syncBox');
+  el.textContent = msg;
+  el.className = 'sync-box' + (cls?' '+cls:'');
+}
+
+function showLoad(on) { document.getElementById('loading').className='loading'+(on?' show':''); }
+
+let toastT;
+function toast(msg, type) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='show'+(type?' '+type:'');
+  clearTimeout(toastT); toastT=setTimeout(()=>{el.className=''},3000);
+}
+</script>
+</body>
+</html>
