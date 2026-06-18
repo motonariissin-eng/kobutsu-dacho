@@ -287,6 +287,8 @@
     <div class="stat"><div class="stat-n" id="s-out">-</div><div class="stat-l">払出件数</div></div>
     <div class="stat"><div class="stat-n" id="s-stock">-</div><div class="stat-l">在庫件数</div></div>
     <div class="stat"><div class="stat-n" id="s-total">-</div><div class="stat-l">総件数</div></div>
+    <div class="stat"><div class="stat-n" id="s-in-amount" style="font-size:16px">-</div><div class="stat-l">受入合計金額</div></div>
+    <div class="stat"><div class="stat-n" id="s-out-amount" style="font-size:16px">-</div><div class="stat-l">払出合計金額</div></div>
   </div>
 
   <div class="card">
@@ -331,7 +333,7 @@
 <div id="toast"></div>
 
 <script>
-const GAS = 'https://script.google.com/macros/s/AKfycbztZYC3Rj6A_mrM_eukUZF-Kvx_fFBAyO9gdjWXzutKqU9XSH5xl-5Cdn2zmFnOjJ0p/exec';
+const GAS = 'https://script.google.com/macros/s/AKfycbyq_MqD2A3a1cRXZxxqcv3GDfQdQ_ybmPRZH_DFbwo88Dr7UU0gE9OIIH8X2wFkdlib/exec';
 const LS = 'kobutu_v2';
 
 // ===== ローカルストレージ =====
@@ -342,32 +344,21 @@ function save(d) { localStorage.setItem(LS, JSON.stringify(d)); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
 
 // ===== 採番 =====
-// 既存GASデータはuid=数値でinIdを持つ。新規はuid=文字列、inIdを独自管理
-function nextSeq(kubun) {
-  const data = load();
-  const isIn = kubun === '受入';
-  const filtered = data.filter(d => isIn ? isInKubun(d.kubun) : isOutKubun(d.kubun));
-  if (!filtered.length) return isIn ? 101 : 1; // 受入は既存101件以降から、払出は既存から
-  const nums = filtered.map(d => {
-    const n = parseInt(d.inId || d.outId || 0);
-    return isNaN(n) ? 0 : n;
-  });
-  return Math.max(...nums) + 1;
-}
-
+// 実際のGASは id 列を1つしか持たず、受入・払出を区別しない。
+// 衝突を避けるため、id は受入・払出を通した全体連番として扱う。
 function isInKubun(k) { return k && k.includes('受入'); }
 function isOutKubun(k) { return k && k.includes('払出'); }
 
-function updateNextIds() {
+function nextGlobalId() {
   const data = load();
-  const inRecs = data.filter(d => isInKubun(d.kubun));
-  const outRecs = data.filter(d => isOutKubun(d.kubun));
-  const inNums = inRecs.map(d => parseInt(d.inId||0)).filter(n=>!isNaN(n));
-  const outNums = outRecs.map(d => parseInt(d.inId||d.outId||0)).filter(n=>!isNaN(n));
-  const nextIn = inNums.length ? Math.max(...inNums)+1 : 1;
-  const nextOut = outNums.length ? Math.max(...outNums)+1 : 1;
-  document.getElementById('nextInId').textContent = '受入番号: ' + nextIn;
-  document.getElementById('nextOutId').textContent = '払出番号: ' + nextOut;
+  const nums = data.map(d => parseInt(d.id||0)).filter(n=>!isNaN(n));
+  return nums.length ? Math.max(...nums)+1 : 1;
+}
+
+function updateNextIds() {
+  const next = nextGlobalId();
+  document.getElementById('nextInId').textContent = '受入番号: ' + next;
+  document.getElementById('nextOutId').textContent = '払出番号: ' + next;
 }
 
 function updateHeaderCount() {
@@ -396,16 +387,14 @@ function tab(id, btn) {
 }
 
 // ===== 受入保存 =====
+// 実際のGASスキーマ: uid,id,date,kubun,category,qty,feature,price,age,idMethod,idNo,name,address,job,memo,createdAt,sold
+// inId / soldEntryId / linkedInId / totalPrice / serviceFee はGAS側に列がないため保存されない
 function submitIn() {
-  const data = load();
-  const inRecs = data.filter(d=>isInKubun(d.kubun));
-  const inNums = inRecs.map(d=>parseInt(d.inId||0)).filter(n=>!isNaN(n));
-  const nextIn = inNums.length ? Math.max(...inNums)+1 : 1;
+  const nextIn = nextGlobalId();
 
   const rec = {
     uid: uid(),
     id: nextIn,
-    inId: nextIn,
     date: v('in-date'),
     kubun: '受入（買受）',
     category: v('in-category'),
@@ -420,7 +409,6 @@ function submitIn() {
     job: v('in-job'),
     memo: v('in-memo'),
     sold: false,
-    soldEntryId: '',
     createdAt: new Date().toISOString()
   };
 
@@ -440,35 +428,46 @@ function submitIn() {
 }
 
 // ===== 払出保存 =====
+// linkedInId・合計金額・作業費明細は memo に埋め込んで記録する（GASに専用列がないため）
 function submitOut() {
-  const data = load();
-  const outRecs = data.filter(d=>isOutKubun(d.kubun));
-  const outNums = outRecs.map(d=>parseInt(d.inId||d.outId||0)).filter(n=>!isNaN(n));
-  const nextOut = outNums.length ? Math.max(...outNums)+1 : 1;
+  const nextOut = nextGlobalId();
 
-  calcOutPrice(); // hidden の out-price を最新化
+  calcOutPrice(); // hidden の out-price（本体金額）を最新化
   const linkedInId = v('out-linked');
+  const totalPrice = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
+  const bodyPrice = parseInt(document.getElementById('out-price').value) || 0;
+  const serviceFee = Math.max(0, totalPrice - bodyPrice);
+  const serviceMemo = getServiceMemo();
+
+  // memoに付帯情報を埋め込み（後で正規表現で抽出できる形式）
+  const metaTags = [];
+  if (linkedInId) metaTags.push('[対応受入:' + linkedInId + ']');
+  if (totalPrice) metaTags.push('[合計金額:' + totalPrice + ']');
+  if (serviceFee) metaTags.push('[作業費:' + serviceFee + ']');
+  const fullMemo = [metaTags.join(''), v('out-memo'), serviceMemo].filter(Boolean).join(' ');
+
   const rec = {
     uid: uid(),
     id: nextOut,
-    inId: nextOut,
     date: v('out-date'),
     kubun: '払出（売渡）',
     category: v('out-category'),
     qty: v('out-qty') || '1',
     feature: buildFeature(v('out-maker'), v('out-model'), v('out-frame')),
-    price: v('out-price'),
+    price: bodyPrice || totalPrice, // 本体金額（作業費がなければ合計金額そのもの）
     age: v('out-age2'),
     idMethod: v('out-idMethod'),
     idNo: v('out-idNo'),
     name: v('out-name'),
     address: v('out-address'),
     job: v('out-job'),
-    memo: [v('out-memo'), getServiceMemo()].filter(Boolean).join(' / '),
-    serviceFee: (parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,''))||0) - (parseInt(document.getElementById('out-price').value)||0),
-    totalPrice: parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,''))||0,
+    memo: fullMemo,
+    sold: false,
+    createdAt: new Date().toISOString(),
+    // ローカル表示用（GASには保存されないが、ローカルキャッシュには残す）
     linkedInId: linkedInId,
-    createdAt: new Date().toISOString()
+    totalPrice: totalPrice,
+    serviceFee: serviceFee
   };
 
   if (!rec.date || !rec.category || !v('out-model') || !rec.name) {
@@ -478,10 +477,10 @@ function submitOut() {
     if (res.status === 'ok') {
       const all = load();
       all.push(rec);
-      // 受入に売済マーク
+      // 受入に売済マーク（ローカルのみ。GASには sold 列はあるが更新APIがないため更新しない）
       if (linkedInId) {
-        const idx = all.findIndex(r => String(r.inId) === String(linkedInId) && isInKubun(r.kubun));
-        if (idx >= 0) { all[idx].sold = true; all[idx].soldEntryId = rec.uid; }
+        const idx = all.findIndex(r => String(r.id) === String(linkedInId) && isInKubun(r.kubun));
+        if (idx >= 0) { all[idx].sold = true; }
       }
       save(all);
       updateNextIds(); updateHeaderCount();
@@ -491,6 +490,18 @@ function submitOut() {
       toast('エラー: ' + (res.message||'不明'), 'err');
     }
   });
+}
+
+// ===== memo内の付帯情報タグを復元 =====
+// submitOutで埋め込んだ [対応受入:5][合計金額:50000][作業費:3000] を解析してフィールドに戻す
+function parseMetaTags(row) {
+  if (!row.memo) return;
+  const m1 = row.memo.match(/\[対応受入:([^\]]+)\]/);
+  const m2 = row.memo.match(/\[合計金額:([^\]]+)\]/);
+  const m3 = row.memo.match(/\[作業費:([^\]]+)\]/);
+  if (m1) row.linkedInId = m1[1];
+  if (m2) row.totalPrice = parseInt(m2[1]) || 0;
+  if (m3) row.serviceFee = parseInt(m3[1]) || 0;
 }
 
 // ===== JSONP送信 =====
@@ -513,21 +524,21 @@ function gasPost(rec, cb) {
 }
 
 // ===== GAS全件取得 =====
+// 実際のGASは action='save' 以外なら無条件で全件返す（action=getAll という概念はない）
 function syncFromGAS() {
   setSyncBox('取得中...', 'loading'); showLoad(true);
   const cbName = 'cb_sync_' + Date.now();
   window[cbName] = function(res) {
     cleanup(); showLoad(false);
-    if (res && res.entries && Array.isArray(res.entries)) {
+    if (res && res.status === 'ok' && Array.isArray(res.entries)) {
       const gasData = res.entries;
       const local = load();
       const localUIDs = new Set(local.map(r => String(r.uid)));
       let added = 0;
       gasData.forEach(row => {
         if (!localUIDs.has(String(row.uid))) {
-          // sold フィールドがなければ補完
           if (row.sold === undefined) row.sold = false;
-          if (row.soldEntryId === undefined) row.soldEntryId = '';
+          parseMetaTags(row); // memo内の[対応受入:xx]等を復元
           local.push(row); added++;
         }
       });
@@ -537,31 +548,34 @@ function syncFromGAS() {
       toast(added + '件追加しました', 'ok');
       buildPartnerButtons();
     } else {
-      setSyncBox('取得失敗: ' + JSON.stringify(res), 'err');
+      setSyncBox('取得失敗: ' + (res?.message || JSON.stringify(res)), 'err');
       toast('取得失敗', 'err');
     }
   };
   function cleanup() { const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
-  const url = GAS + '?action=getAll&callback=' + cbName;
+  const url = GAS + '?callback=' + cbName;
   const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
   s.onerror=function(){ cleanup(); showLoad(false); setSyncBox('接続エラー','err'); };
   setTimeout(()=>{ cleanup(); showLoad(false); setSyncBox('タイムアウト','err'); }, 20000);
   document.head.appendChild(s);
 }
 
+// ===== 接続確認 =====
+// GASに ping action は存在しないため、全件取得が成功するかどうかで判定する
 function pingGAS() {
   setSyncBox('接続確認中...', 'loading');
   const cbName = 'cb_ping_' + Date.now();
   window[cbName] = function(res) {
     cleanup();
-    if (res && (res.status==='ok'||res.message==='alive')) {
-      setSyncBox('✓ GAS接続OK（' + new Date().toLocaleTimeString('ja-JP') + '）', 'ok');
+    if (res && res.status === 'ok') {
+      const n = Array.isArray(res.entries) ? res.entries.length : 0;
+      setSyncBox('✓ GAS接続OK（台帳 ' + n + '件、' + new Date().toLocaleTimeString('ja-JP') + '）', 'ok');
     } else {
-      setSyncBox('応答: ' + JSON.stringify(res), 'err');
+      setSyncBox('応答: ' + (res?.message || JSON.stringify(res)), 'err');
     }
   };
   function cleanup() { const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
-  const url = GAS + '?action=ping&callback=' + cbName;
+  const url = GAS + '?callback=' + cbName;
   const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
   s.onerror=function(){ cleanup(); setSyncBox('接続エラー','err'); };
   setTimeout(()=>{ cleanup(); }, 10000);
@@ -595,7 +609,7 @@ function renderList() {
   body.innerHTML = data.map(d => {
     const f = parseFeature(d.feature);
     const isIn = isInKubun(d.kubun);
-    const entryId = d.inId || d.id || '';
+    const entryId = d.id || '';
     const soldFlag = isIn && allData.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(entryId));
     return `<div class="entry ${isIn?'in':'out'}" onclick="showDetail('${d.uid}')">
       <div class="e-top">
@@ -618,7 +632,7 @@ function showDetail(u) {
   currentUID = u;
   const f = parseFeature(d.feature);
   const isIn = isInKubun(d.kubun);
-  document.getElementById('m-title').textContent = (isIn?'受入':'払出') + '-' + (d.inId||d.id||'') + '　' + d.kubun;
+  document.getElementById('m-title').textContent = (isIn?'受入':'払出') + '-' + (d.id||'') + '　' + d.kubun;
   const rows = [
     ['区分', d.kubun],
     ['取引日', d.date],
@@ -637,7 +651,7 @@ function showDetail(u) {
     ['書類番号', d.idNo],
     ['備考', d.memo],
     isOutKubun(d.kubun) ? ['対応受入番号', d.linkedInId] : null,
-    ['売却済', (isInKubun(d.kubun) && load().some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.inId||d.id))) ? 'はい' : 'いいえ'],
+    ['売却済', (isInKubun(d.kubun) && load().some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id))) ? 'はい' : 'いいえ'],
   ].filter(r => r && r[1]);
 
   document.getElementById('m-body').innerHTML = rows.map(([l,v])=>
@@ -660,8 +674,8 @@ function deleteEntry() {
   if (idx < 0) return;
   const removed = data.splice(idx, 1)[0];
   if (isOutKubun(removed.kubun) && removed.linkedInId) {
-    const ii = data.findIndex(r => String(r.inId) === String(removed.linkedInId) && isInKubun(r.kubun));
-    if (ii >= 0) { data[ii].sold = false; data[ii].soldEntryId = ''; }
+    const ii = data.findIndex(r => String(r.id) === String(removed.linkedInId) && isInKubun(r.kubun));
+    if (ii >= 0) { data[ii].sold = false; }
   }
   save(data);
   closeModal(); updateNextIds(); updateHeaderCount(); renderList();
@@ -671,12 +685,12 @@ function deleteEntry() {
 // ===== 払出フォーム：在庫選択肢 =====
 function updateLinkedSelect() {
   const all = load();
-  const data = all.filter(d => isInKubun(d.kubun) && !all.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.inId||d.id)));
+  const data = all.filter(d => isInKubun(d.kubun) && !all.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id)));
   const sel = document.getElementById('out-linked');
   sel.innerHTML = '<option value="">（紐付けなし）</option>' +
     data.map(d => {
       const f = parseFeature(d.feature);
-      return `<option value="${d.inId||d.id}">${d.inId||d.id} — ${[f.maker,f.model].filter(Boolean).join(' ')}</option>`;
+      return `<option value="${d.id}">${d.id} — ${[f.maker,f.model].filter(Boolean).join(' ')}</option>`;
     }).join('');
 }
 
@@ -714,7 +728,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('out-linked').addEventListener('change', function() {
     const val = this.value;
     if (!val) return;
-    const rec = load().find(r => String(r.inId||r.id) === String(val) && isInKubun(r.kubun));
+    const rec = load().find(r => String(r.id) === String(val) && isInKubun(r.kubun));
     if (!rec) return;
     const f = parseFeature(rec.feature);
     document.getElementById('out-category').value = rec.category || '';
@@ -816,13 +830,25 @@ function getServiceMemo() {
 // ===== 統計（在庫 = 受入件数 − 払出件数） =====
 function updateStats() {
   const d = load();
-  const ic = d.filter(r=>isInKubun(r.kubun)).length;
-  const oc = d.filter(r=>isOutKubun(r.kubun)).length;
+  const inRecs = d.filter(r=>isInKubun(r.kubun));
+  const outRecs = d.filter(r=>isOutKubun(r.kubun));
+  const ic = inRecs.length;
+  const oc = outRecs.length;
   const sc = Math.max(0, ic - oc);
+
+  const inAmount = inRecs.reduce((sum, r) => sum + (parseInt(r.price) || 0), 0);
+  // 払出は totalPrice（サービス料金込みの合計）があればそれを使う。なければ price で代替
+  const outAmount = outRecs.reduce((sum, r) => {
+    const t = parseInt(r.totalPrice);
+    return sum + (!isNaN(t) && t ? t : (parseInt(r.price) || 0));
+  }, 0);
+
   document.getElementById('s-in').textContent = ic;
   document.getElementById('s-out').textContent = oc;
   document.getElementById('s-stock').textContent = sc;
   document.getElementById('s-total').textContent = d.length;
+  document.getElementById('s-in-amount').textContent = '¥' + inAmount.toLocaleString();
+  document.getElementById('s-out-amount').textContent = '¥' + outAmount.toLocaleString();
 }
 
 // ===== CSV =====
@@ -831,7 +857,7 @@ function exportCSV(type) {
   if (type==='受入') data = data.filter(d=>isInKubun(d.kubun));
   else if (type==='払出') data = data.filter(d=>isOutKubun(d.kubun));
   if (!data.length) { toast('データなし','err'); return; }
-  const keys = ['uid','id','inId','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','soldEntryId','linkedInId','createdAt'];
+  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee'];
   const csv = [keys.join(','), ...data.map(d=>keys.map(k=>'"'+String(d[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
