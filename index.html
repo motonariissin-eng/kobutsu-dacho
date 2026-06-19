@@ -299,6 +299,10 @@
       <button class="btn btn-primary" onclick="syncFromGAS()">GASから全件取得</button>
       <button class="btn btn-secondary" onclick="pingGAS()">接続確認</button>
     </div>
+    <p style="font-size:12px;color:#c88;margin:10px 0 6px">注意：下のボタンはローカルの全データでGAS側を完全に上書きします。</p>
+    <div class="btn-group">
+      <button class="btn btn-danger" onclick="pushAllToGAS()">ローカル全件をGASに上書き送信</button>
+    </div>
   </div>
 
   <div class="card">
@@ -333,7 +337,7 @@
 <div id="toast"></div>
 
 <script>
-const GAS = 'https://script.google.com/macros/s/AKfycbzl1OkzycavBNy2cDxB5DJur7BvwoR69j8jtgfHfl1ZoltqLblMJ4DWU0ahxNYJ9pTO/exec';
+const GAS = 'https://script.google.com/macros/s/AKfycbyq_MqD2A3a1cRXZxxqcv3GDfQdQ_ybmPRZH_DFbwo88Dr7UU0gE9OIIH8X2wFkdlib/exec';
 const LS = 'kobutu_v2';
 
 // ===== ローカルストレージ =====
@@ -502,6 +506,52 @@ function parseMetaTags(row) {
   if (m1) row.linkedInId = m1[1];
   if (m2) row.totalPrice = parseInt(m2[1]) || 0;
   if (m3) row.serviceFee = parseInt(m3[1]) || 0;
+}
+
+// ===== ローカル全件をGASへ一括アップロード（上書き、バッチ分割） =====
+function pushAllToGAS() {
+  const data = load();
+  if (!data.length) { toast('ローカルにデータがありません', 'err'); return; }
+  if (!confirm('ローカルの' + data.length + '件で、GAS側のデータを完全に上書きします。よろしいですか？')) return;
+
+  const BATCH = 30; // 1回のGETで送る件数（URL長制限対策）
+  const batches = [];
+  for (let i = 0; i < data.length; i += BATCH) batches.push(data.slice(i, i + BATCH));
+
+  setSyncBox('アップロード中... (0/' + batches.length + ')', 'loading'); showLoad(true);
+
+  let idx = 0;
+  function sendNext() {
+    if (idx >= batches.length) {
+      showLoad(false);
+      setSyncBox('アップロード完了 ' + data.length + '件（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+      toast('GASへ' + data.length + '件アップロードしました', 'ok');
+      return;
+    }
+    const isFirst = idx === 0;
+    const batch = batches[idx];
+    const cbName = 'cb_pushall_' + Date.now() + '_' + idx;
+    window[cbName] = function(res) {
+      cleanup();
+      if (res && res.status === 'ok') {
+        idx++;
+        setSyncBox('アップロード中... (' + idx + '/' + batches.length + ')', 'loading');
+        sendNext();
+      } else {
+        showLoad(false);
+        setSyncBox('アップロード失敗（バッチ' + (idx+1) + '）: ' + (res?.message || JSON.stringify(res)), 'err');
+        toast('アップロード失敗', 'err');
+      }
+    };
+    function cleanup() { const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
+    const action = isFirst ? 'saveAllStart' : 'saveAllAppend';
+    const url = GAS + '?action=' + action + '&data=' + encodeURIComponent(JSON.stringify(batch)) + '&callback=' + cbName;
+    const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
+    s.onerror = function() { cleanup(); showLoad(false); setSyncBox('接続エラー（バッチ' + (idx+1) + '）','err'); };
+    setTimeout(()=>{ cleanup(); }, 20000);
+    document.head.appendChild(s);
+  }
+  sendNext();
 }
 
 // ===== JSONP送信 =====
