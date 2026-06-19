@@ -974,7 +974,10 @@ function renumberIds() {
   if (!data.length) { toast('データなし', 'err'); return; }
   if (!confirm('受入・払出のIDを取引年月日の古い順に1から振り直します。\nローカルのみの変更です。よろしいですか？')) return;
 
-  const sortKey = r => (r.date || '') + 'T' + (r.createdAt || '');
+  const sortKey = r => {
+    const n = parseInt(r.id, 10);
+    return (r.date || '') + 'T' + String(isNaN(n) ? 999999 : n).padStart(6, '0');
+  };
 
   const ins = data.filter(r => isInKubun(r.kubun)).sort((a,b) => sortKey(a) < sortKey(b) ? -1 : 1);
   const outs = data.filter(r => isOutKubun(r.kubun)).sort((a,b) => sortKey(a) < sortKey(b) ? -1 : 1);
