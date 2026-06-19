@@ -315,6 +315,16 @@
   </div>
 
   <div class="card">
+    <h2>バックアップ（JSON）</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">ID整理など大きな操作の前に、現在のローカルデータをファイルに保存しておくことをおすすめします。</p>
+    <div class="btn-group">
+      <button class="btn" onclick="exportBackupJSON()">現在のデータをバックアップ保存</button>
+      <button class="btn" onclick="document.getElementById('restoreFile').click()">バックアップから復元</button>
+      <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="importBackupJSON(this)">
+    </div>
+  </div>
+
+  <div class="card">
     <h2>ID整理（再採番）</h2>
     <p style="font-size:12px;color:var(--text2);margin-bottom:8px">過去データを取引年月日の古い順に並べ直し、受入・払出それぞれを1からの連番に振り直します。払出の「対応受入番号」やメモ内のタグも自動で追従します。</p>
     <p style="font-size:12px;color:#c88;margin-bottom:8px">注意：ローカルのみの変更です。GAS側にも反映する場合は、この後に下の「ローカル全件をGASに上書き送信」を実行してください。</p>
@@ -910,6 +920,38 @@ function updateStats() {
   document.getElementById('s-total').textContent = d.length;
   document.getElementById('s-in-amount').textContent = '¥' + inAmount.toLocaleString();
   document.getElementById('s-out-amount').textContent = '¥' + outAmount.toLocaleString();
+}
+
+// ===== JSONバックアップ・復元 =====
+function exportBackupJSON() {
+  const data = load();
+  if (!data.length) { toast('データなし', 'err'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}));
+  a.download = '古物台帳_バックアップ_' + todayISO().replace(/-/g,'') + '_' + Date.now() + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('バックアップを保存しました（' + data.length + '件）', 'ok');
+}
+
+function importBackupJSON(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const restored = JSON.parse(e.target.result);
+      if (!Array.isArray(restored)) throw new Error('形式が不正です');
+      if (!confirm('現在のローカルデータ（' + load().length + '件）を、このバックアップ（' + restored.length + '件）で完全に置き換えます。よろしいですか？')) return;
+      save(restored);
+      updateNextIds(); updateHeaderCount(); updateStats();
+      if (document.getElementById('t-list').classList.contains('active')) renderList();
+      toast('バックアップから復元しました（' + restored.length + '件）', 'ok');
+    } catch (err) {
+      toast('復元に失敗しました: ' + err.message, 'err');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
 }
 
 // ===== CSV =====
