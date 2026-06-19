@@ -315,6 +315,15 @@
   </div>
 
   <div class="card">
+    <h2>ID整理（再採番）</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">過去データを取引年月日の古い順に並べ直し、受入・払出それぞれを1からの連番に振り直します。払出の「対応受入番号」やメモ内のタグも自動で追従します。</p>
+    <p style="font-size:12px;color:#c88;margin-bottom:8px">注意：ローカルのみの変更です。GAS側にも反映する場合は、この後に下の「ローカル全件をGASに上書き送信」を実行してください。</p>
+    <div class="btn-group">
+      <button class="btn btn-danger" onclick="renumberIds()">受入・払出のIDを1から振り直す</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>ローカルデータ削除</h2>
     <p style="font-size:12px;color:#c88;margin-bottom:8px">注意：取り消せません。GASのデータは残ります。</p>
     <button class="btn btn-danger" onclick="clearLocal()">ローカル全削除</button>
@@ -348,21 +357,23 @@ function save(d) { localStorage.setItem(LS, JSON.stringify(d)); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
 
 // ===== 採番 =====
-// 実際のGASは id 列を1つしか持たず、受入・払出を区別しない。
-// 衝突を避けるため、id は受入・払出を通した全体連番として扱う。
+// 受入・払出は別々の連番（受入1,2,3... 払出1,2,3...）として扱う。
+// GASの id 列は受入・払出共通だが、全ての参照箇所で id と kubun をセットで
+// 比較しているため、番号が重複しても受入/払出のレコードを取り違えることはない。
 function isInKubun(k) { return k && k.includes('受入'); }
 function isOutKubun(k) { return k && k.includes('払出'); }
 
-function nextGlobalId() {
+function nextIdForKubun(kindFilterFn) {
   const data = load();
-  const nums = data.map(d => parseInt(d.id||0)).filter(n=>!isNaN(n));
+  const nums = data.filter(d => kindFilterFn(d.kubun)).map(d => parseInt(d.id||0)).filter(n=>!isNaN(n));
   return nums.length ? Math.max(...nums)+1 : 1;
 }
+function nextInId() { return nextIdForKubun(isInKubun); }
+function nextOutId() { return nextIdForKubun(isOutKubun); }
 
 function updateNextIds() {
-  const next = nextGlobalId();
-  document.getElementById('nextInId').textContent = '受入番号: ' + next;
-  document.getElementById('nextOutId').textContent = '払出番号: ' + next;
+  document.getElementById('nextInId').textContent = '受入番号: ' + nextInId();
+  document.getElementById('nextOutId').textContent = '払出番号: ' + nextOutId();
 }
 
 function updateHeaderCount() {
@@ -394,7 +405,7 @@ function tab(id, btn) {
 // 実際のGASスキーマ: uid,id,date,kubun,category,qty,feature,price,age,idMethod,idNo,name,address,job,memo,createdAt,sold
 // inId / soldEntryId / linkedInId / totalPrice / serviceFee はGAS側に列がないため保存されない
 function submitIn() {
-  const nextIn = nextGlobalId();
+  const nextIn = nextInId();
 
   const rec = {
     uid: uid(),
@@ -434,7 +445,7 @@ function submitIn() {
 // ===== 払出保存 =====
 // linkedInId・合計金額・作業費明細は memo に埋め込んで記録する（GASに専用列がないため）
 function submitOut() {
-  const nextOut = nextGlobalId();
+  const nextOut = nextOutId();
 
   calcOutPrice(); // hidden の out-price（本体金額）を最新化
   const linkedInId = v('out-linked');
@@ -580,7 +591,7 @@ function syncFromGAS() {
   const cbName = 'cb_sync_' + Date.now();
   window[cbName] = function(res) {
     cleanup(); showLoad(false);
-    if (res && res.status === 'ok' && Array.isArray(res.entries)) {
+    if (res && Array.isArray(res.entries)) {
       const gasData = res.entries;
       const local = load();
       const localUIDs = new Set(local.map(r => String(r.uid)));
@@ -617,8 +628,8 @@ function pingGAS() {
   const cbName = 'cb_ping_' + Date.now();
   window[cbName] = function(res) {
     cleanup();
-    if (res && res.status === 'ok') {
-      const n = Array.isArray(res.entries) ? res.entries.length : 0;
+    if (res && Array.isArray(res.entries)) {
+      const n = res.entries.length;
       setSyncBox('✓ GAS接続OK（台帳 ' + n + '件、' + new Date().toLocaleTimeString('ja-JP') + '）', 'ok');
     } else {
       setSyncBox('応答: ' + (res?.message || JSON.stringify(res)), 'err');
@@ -913,6 +924,37 @@ function exportCSV(type) {
   a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
   a.download = '古物台帳_'+type+'_'+todayISO().replace(/-/g,'')+'.csv';
   a.click();
+}
+
+// ===== ID整理：受入・払出を取引年月日の古い順に1から振り直す =====
+function renumberIds() {
+  const data = load();
+  if (!data.length) { toast('データなし', 'err'); return; }
+  if (!confirm('受入・払出のIDを取引年月日の古い順に1から振り直します。\nローカルのみの変更です。よろしいですか？')) return;
+
+  const sortKey = r => (r.date || '') + 'T' + (r.createdAt || '');
+
+  const ins = data.filter(r => isInKubun(r.kubun)).sort((a,b) => sortKey(a) < sortKey(b) ? -1 : 1);
+  const outs = data.filter(r => isOutKubun(r.kubun)).sort((a,b) => sortKey(a) < sortKey(b) ? -1 : 1);
+  const others = data.filter(r => !isInKubun(r.kubun) && !isOutKubun(r.kubun));
+
+  const oldToNewIn = {};
+  ins.forEach((r, i) => { oldToNewIn[String(r.id)] = i + 1; r.id = i + 1; });
+  outs.forEach((r, i) => {
+    r.id = i + 1;
+    if (r.linkedInId && oldToNewIn[String(r.linkedInId)] !== undefined) {
+      const newLinked = oldToNewIn[String(r.linkedInId)];
+      if (r.memo) {
+        r.memo = r.memo.replace(/\[対応受入:[^\]]+\]/, '[対応受入:' + newLinked + ']');
+      }
+      r.linkedInId = String(newLinked);
+    }
+  });
+
+  save([...ins, ...outs, ...others]);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+  toast('ID整理が完了しました（受入' + ins.length + '件・払出' + outs.length + '件）', 'ok');
 }
 
 function clearLocal() {
