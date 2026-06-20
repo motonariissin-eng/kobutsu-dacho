@@ -640,38 +640,56 @@ function gasPost(rec, cb) {
 // ===== GAS全件取得 =====
 // 実際のGASは action='save' 以外なら無条件で全件返す（action=getAll という概念はない）
 function syncFromGAS() {
-  setSyncBox('取得中...', 'loading'); showLoad(true);
-  const cbName = 'cb_sync_' + Date.now();
-  window[cbName] = function(res) {
-    cleanup(); showLoad(false);
-    if (res && Array.isArray(res.entries)) {
-      const gasData = res.entries;
-      const local = load();
-      const localUIDs = new Set(local.map(r => String(r.uid)));
-      let added = 0;
-      gasData.forEach(row => {
-        if (!localUIDs.has(String(row.uid))) {
-          if (row.sold === undefined) row.sold = false;
-          parseMetaTags(row); // memo内の[対応受入:xx]等を復元
-          local.push(row); added++;
-        }
-      });
-      save(local);
-      updateNextIds(); updateHeaderCount();
-      setSyncBox('同期完了 ' + gasData.length + '件取得、' + added + '件追加（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
-      toast(added + '件追加しました', 'ok');
-      buildPartnerButtons();
-    } else {
-      setSyncBox('取得失敗: ' + (res?.message || JSON.stringify(res)), 'err');
-      toast('取得失敗', 'err');
+  let retryCount = 0;
+  function attempt() {
+    setSyncBox(retryCount ? ('再試行中...（' + retryCount + '回目）') : '取得中...', 'loading');
+    showLoad(true, retryCount ? ('再試行中...（' + retryCount + '回目）') : '取得中...');
+    const cbName = 'cb_sync_' + Date.now() + '_' + retryCount;
+    let timer;
+    window[cbName] = function(res) {
+      clearTimeout(timer);
+      cleanup();
+      showLoad(false);
+      if (res && Array.isArray(res.entries)) {
+        const gasData = res.entries;
+        const local = load();
+        const localUIDs = new Set(local.map(r => String(r.uid)));
+        let added = 0;
+        gasData.forEach(row => {
+          if (!localUIDs.has(String(row.uid))) {
+            if (row.sold === undefined) row.sold = false;
+            parseMetaTags(row); // memo内の[対応受入:xx]等を復元
+            local.push(row); added++;
+          }
+        });
+        save(local);
+        updateNextIds(); updateHeaderCount();
+        setSyncBox('同期完了 ' + gasData.length + '件取得、' + added + '件追加（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+        toast(added + '件追加しました', 'ok');
+        buildPartnerButtons();
+      } else {
+        setSyncBox('取得失敗: ' + (res?.message || JSON.stringify(res)), 'err');
+        toast('取得失敗', 'err');
+      }
+    };
+    function cleanup() { clearTimeout(timer); const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
+    const url = GAS + '?callback=' + cbName;
+    const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
+    function handleFailure(label) {
+      cleanup();
+      if (retryCount < 2) {
+        retryCount++;
+        setTimeout(attempt, 800);
+      } else {
+        showLoad(false);
+        setSyncBox(label + '（' + retryCount + '回再試行しても失敗）。通信環境を確認してください。', 'err');
+      }
     }
-  };
-  function cleanup() { const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
-  const url = GAS + '?callback=' + cbName;
-  const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
-  s.onerror=function(){ cleanup(); showLoad(false); setSyncBox('接続エラー','err'); };
-  setTimeout(()=>{ cleanup(); showLoad(false); setSyncBox('タイムアウト','err'); }, 20000);
-  document.head.appendChild(s);
+    s.onerror = function(){ handleFailure('接続エラー'); };
+    timer = setTimeout(()=>{ handleFailure('タイムアウト'); }, 30000);
+    document.head.appendChild(s);
+  }
+  attempt();
 }
 
 // ===== 接続確認 =====
