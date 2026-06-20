@@ -220,19 +220,20 @@
       <input type="text" inputmode="numeric" id="out-total" placeholder="0" oninput="calcOutPrice()">
     </div>
     <div class="field">
-      <label>作業費・サービス料金</label>
+      <label>サービス料金</label>
+      <div id="service-quick-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
       <div id="service-rows" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
       <button type="button" class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="addServiceRow()">＋ 項目追加</button>
     </div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px">
-        <span>合計金額</span><span id="disp-total">¥ 0</span>
+        <span>サービス料金計</span><span id="disp-service">¥ 0</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px">
-        <span>作業費計</span><span id="disp-service">¥ 0</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;color:var(--accent);border-top:1px solid var(--border);padding-top:6px;margin-top:2px">
         <span>本体金額</span><span id="disp-body">¥ 0</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;color:var(--accent);border-top:1px solid var(--border);padding-top:6px;margin-top:2px">
+        <span>合計金額</span><span id="disp-total">¥ 0</span>
       </div>
     </div>
     <input type="hidden" id="out-price">
@@ -290,7 +291,14 @@
     <div class="stat"><div class="stat-n" id="s-stock">-</div><div class="stat-l">在庫件数</div></div>
     <div class="stat"><div class="stat-n" id="s-total">-</div><div class="stat-l">総件数</div></div>
     <div class="stat"><div class="stat-n" id="s-in-amount" style="font-size:16px">-</div><div class="stat-l">受入合計金額</div></div>
-    <div class="stat"><div class="stat-n" id="s-out-amount" style="font-size:16px">-</div><div class="stat-l">払出合計金額</div></div>
+    <div class="stat">
+      <div class="stat-n" id="s-out-amount" style="font-size:22px">-</div>
+      <div class="stat-l">払出合計金額</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:6px;border-top:1px solid var(--border);padding-top:6px">
+        サービス料金合計　<span id="s-out-service">-</span><br>
+        本体価格合計　<span id="s-out-body">-</span>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -954,7 +962,7 @@ function editEntry() {
       const lastRow = document.querySelector('#service-rows > div:last-child');
       if (lastRow) {
         const inputs = lastRow.querySelectorAll('input');
-        inputs[0].value = '（編集前の作業費合計・内訳は備考欄を確認）';
+        inputs[0].value = '（編集前のサービス料金合計・内訳は備考欄を確認）';
         inputs[1].value = d.serviceFee;
       }
     }
@@ -1086,6 +1094,7 @@ document.addEventListener('DOMContentLoaded', function() {
   updateNextIds();
   updateHeaderCount();
   buildPartnerButtons();
+  buildServiceQuickButtons();
 });
 
 // ===== フォームクリア =====
@@ -1140,15 +1149,33 @@ function showInPrice() {
 // ===== 払出：作業費行の追加・削除・計算 =====
 let serviceRowCount = 0;
 
-function addServiceRow() {
+// デフォルトでよく使う作業項目（価格は変動する場合があるため、後で自由に編集可能）
+const SERVICE_PRESETS = [
+  { label: 'オイル交換', amount: 500 },
+  { label: 'プラグ交換', amount: 500 },
+  { label: 'グリップ交換', amount: 500 },
+  { label: 'タイヤ交換', amount: 2000 }
+];
+
+function buildServiceQuickButtons() {
+  const c = document.getElementById('service-quick-btns');
+  if (!c) return;
+  c.innerHTML = SERVICE_PRESETS.map((p, i) =>
+    `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="addServiceRow('${p.label}', ${p.amount})">＋ ${p.label}（¥${p.amount.toLocaleString()}）</button>`
+  ).join('');
+}
+
+function addServiceRow(presetLabel, presetAmount) {
   serviceRowCount++;
   const id = 'srow-' + serviceRowCount;
   const div = document.createElement('div');
   div.id = id;
   div.style.cssText = 'display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center';
+  const labelVal = presetLabel ? presetLabel.replace(/"/g,'&quot;') : '';
+  const amountVal = presetAmount ? presetAmount : '';
   div.innerHTML =
-    '<input type="text" placeholder="例：オイル交換" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;outline:none;font-family:inherit">' +
-    '<input type="text" inputmode="numeric" placeholder="金額" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;outline:none;width:90px;text-align:right;font-family:inherit" oninput="calcOutPrice()">' +
+    '<input type="text" placeholder="例：オイル交換" value="' + labelVal + '" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;outline:none;font-family:inherit">' +
+    '<input type="text" inputmode="numeric" placeholder="金額" value="' + amountVal + '" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;outline:none;width:90px;text-align:right;font-family:inherit" oninput="calcOutPrice()">' +
     '<button type="button" onclick="removeServiceRow(\'' + id + '\')" style="background:var(--danger);border:none;border-radius:4px;color:#fff;padding:6px 8px;font-size:12px;cursor:pointer;line-height:1">✕</button>';
   document.getElementById('service-rows').appendChild(div);
   calcOutPrice();
@@ -1203,6 +1230,9 @@ function updateStats() {
     const t = parseInt(r.totalPrice);
     return sum + (!isNaN(t) && t ? t : (parseInt(r.price) || 0));
   }, 0);
+  // 作業費（サービス料金）合計と本体価格合計
+  const outServiceAmount = outRecs.reduce((sum, r) => sum + (parseInt(r.serviceFee) || 0), 0);
+  const outBodyAmount = outRecs.reduce((sum, r) => sum + (parseInt(r.price) || 0), 0);
 
   document.getElementById('s-in').textContent = ic;
   document.getElementById('s-out').textContent = oc;
@@ -1210,6 +1240,8 @@ function updateStats() {
   document.getElementById('s-total').textContent = d.length;
   document.getElementById('s-in-amount').textContent = '¥' + inAmount.toLocaleString();
   document.getElementById('s-out-amount').textContent = '¥' + outAmount.toLocaleString();
+  document.getElementById('s-out-service').textContent = '¥' + outServiceAmount.toLocaleString();
+  document.getElementById('s-out-body').textContent = '¥' + outBodyAmount.toLocaleString();
 }
 
 // ===== データ内訳・重複チェック =====
