@@ -315,7 +315,16 @@
   </div>
 
   <div class="card">
-    <h2>バックアップ（JSON）</h2>
+    <h2>データ内訳チェック</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">件数が想定と合わない場合に、区分ごとの件数やuid重複を確認できます。</p>
+    <div class="btn-group">
+      <button class="btn" onclick="checkDataBreakdown()">内訳・重複をチェック</button>
+    </div>
+    <pre id="breakdownResult" style="font-size:12px;white-space:pre-wrap;margin-top:8px;display:none;background:var(--bg2);padding:8px;border-radius:6px"></pre>
+  </div>
+
+  <div class="card">
+    <h2>JSONバックアップ</h2>
     <p style="font-size:12px;color:var(--text2);margin-bottom:8px">ID整理など大きな操作の前に、現在のローカルデータをファイルに保存しておくことをおすすめします。</p>
     <div class="btn-group">
       <button class="btn" onclick="exportBackupJSON()">現在のデータをバックアップ保存</button>
@@ -951,6 +960,42 @@ function updateStats() {
   document.getElementById('s-total').textContent = d.length;
   document.getElementById('s-in-amount').textContent = '¥' + inAmount.toLocaleString();
   document.getElementById('s-out-amount').textContent = '¥' + outAmount.toLocaleString();
+}
+
+// ===== データ内訳・重複チェック =====
+function checkDataBreakdown() {
+  const data = load();
+  const box = document.getElementById('breakdownResult');
+  box.style.display = 'block';
+
+  // 区分ごとの件数
+  const byKubun = {};
+  data.forEach(r => {
+    const k = r.kubun || '(空)';
+    byKubun[k] = (byKubun[k] || 0) + 1;
+  });
+
+  // uid重複チェック
+  const uidCount = {};
+  data.forEach(r => {
+    const u = String(r.uid || '(uidなし)');
+    uidCount[u] = (uidCount[u] || 0) + 1;
+  });
+  const dupUids = Object.entries(uidCount).filter(([u,c]) => c > 1);
+
+  let out = '【総件数】' + data.length + '件\n\n【区分ごとの件数】\n';
+  Object.entries(byKubun).sort((a,b)=>b[1]-a[1]).forEach(([k,c]) => {
+    out += '  ' + k + ': ' + c + '件\n';
+  });
+  out += '\n【uid重複】\n';
+  if (dupUids.length) {
+    out += '  重複あり: ' + dupUids.length + '種類のuidが重複しています（合計' + dupUids.reduce((s,[,c])=>s+c,0) + '件分）\n';
+    dupUids.slice(0, 10).forEach(([u,c]) => { out += '    uid=' + u + ' が' + c + '件\n'; });
+    if (dupUids.length > 10) out += '    ...他' + (dupUids.length-10) + '種類\n';
+  } else {
+    out += '  重複なし\n';
+  }
+  box.textContent = out;
 }
 
 // ===== JSONバックアップ・復元 =====
