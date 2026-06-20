@@ -321,6 +321,9 @@
       <button class="btn" onclick="checkDataBreakdown()">内訳・重複をチェック</button>
     </div>
     <pre id="breakdownResult" style="font-size:12px;white-space:pre-wrap;margin-top:8px;display:none;background:var(--bg2);padding:8px;border-radius:6px"></pre>
+    <div id="cleanupBtnWrap" style="display:none;margin-top:8px">
+      <button class="btn btn-danger" onclick="removeBlankKubun()">受入・払出以外のデータを削除する</button>
+    </div>
   </div>
 
   <div class="card">
@@ -995,7 +998,35 @@ function checkDataBreakdown() {
   } else {
     out += '  重複なし\n';
   }
-  box.textContent = out;
+
+  const blanks = data.filter(r => !isInKubun(r.kubun) && !isOutKubun(r.kubun));
+  if (blanks.length) {
+    out += '\n【区分が受入・払出のいずれでもないデータ】 ' + blanks.length + '件\n';
+    out += '--- 先頭5件のサンプル ---\n';
+    blanks.slice(0, 5).forEach(r => {
+      out += JSON.stringify(r) + '\n';
+    });
+    box.textContent = out;
+    document.getElementById('cleanupBtnWrap').style.display = 'block';
+    window.__blankCount = blanks.length;
+  } else {
+    box.textContent = out;
+    document.getElementById('cleanupBtnWrap').style.display = 'none';
+  }
+}
+
+function removeBlankKubun() {
+  const data = load();
+  const blanks = data.filter(r => !isInKubun(r.kubun) && !isOutKubun(r.kubun));
+  if (!blanks.length) { toast('対象データなし', 'err'); return; }
+  if (!confirm('受入・払出のいずれでもないデータ ' + blanks.length + '件を削除します。\n削除前にバックアップを取ることを強く推奨します。よろしいですか？')) return;
+  const cleaned = data.filter(r => isInKubun(r.kubun) || isOutKubun(r.kubun));
+  save(cleaned);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+  document.getElementById('cleanupBtnWrap').style.display = 'none';
+  document.getElementById('breakdownResult').style.display = 'none';
+  toast(blanks.length + '件を削除しました（残り' + cleaned.length + '件）', 'ok');
 }
 
 // ===== JSONバックアップ・復元 =====
