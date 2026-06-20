@@ -647,10 +647,12 @@ function syncFromGAS() {
     const cbName = 'cb_sync_' + Date.now() + '_' + retryCount;
     let timer;
     window[cbName] = function(res) {
+      toast('応答を受信しました', 'ok');
       clearTimeout(timer);
       cleanup();
       showLoad(false);
       if (res && Array.isArray(res.entries)) {
+        toast(res.entries.length + '件のデータを処理開始', 'ok');
         const gasData = res.entries;
         const local = load();
         const localUIDs = new Set(local.map(r => String(r.uid)));
@@ -662,6 +664,7 @@ function syncFromGAS() {
             local.push(row); added++;
           }
         });
+        toast('処理完了、保存します', 'ok');
         save(local);
         updateNextIds(); updateHeaderCount();
         setSyncBox('同期完了 ' + gasData.length + '件取得、' + added + '件追加（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
@@ -675,6 +678,7 @@ function syncFromGAS() {
     function cleanup() { clearTimeout(timer); const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
     const url = GAS + '?callback=' + cbName;
     const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
+    s.onload = function(){ toast('スクリプト読み込み完了', 'ok'); };
     function handleFailure(label) {
       cleanup();
       if (retryCount < 2) {
