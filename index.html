@@ -565,7 +565,8 @@ function pushAllToGAS() {
   });
   if (current.length) batches.push(current);
 
-  setSyncBox('アップロード中... (0/' + batches.length + ')', 'loading'); showLoad(true);
+  showLoad(true, 'アップロード中... (0/' + batches.length + ')');
+  setSyncBox('アップロード中... (0/' + batches.length + ')', 'loading');
 
   let idx = 0;
   let retryCount = 0;
@@ -585,6 +586,7 @@ function pushAllToGAS() {
       cleanup();
       if (res && res.status === 'ok') {
         idx++; retryCount = 0;
+        showLoad(true, 'アップロード中... (' + idx + '/' + batches.length + ')');
         setSyncBox('アップロード中... (' + idx + '/' + batches.length + ')', 'loading');
         sendNext();
       } else {
@@ -601,6 +603,7 @@ function pushAllToGAS() {
       cleanup();
       if (retryCount < 2) {
         retryCount++;
+        showLoad(true, '再試行中... (バッチ' + (idx+1) + ', ' + retryCount + '回目)');
         setSyncBox('再試行中... (バッチ' + (idx+1) + ', ' + retryCount + '回目／' + label + ')', 'loading');
         setTimeout(sendNext, 800);
       } else {
@@ -609,7 +612,7 @@ function pushAllToGAS() {
       }
     }
     s.onerror = function() { handleFailure('接続エラー'); };
-    timer = setTimeout(()=>{ handleFailure('タイムアウト'); }, 45000);
+    timer = setTimeout(()=>{ handleFailure('タイムアウト'); }, 30000);
     document.head.appendChild(s);
   }
   sendNext();
@@ -1124,7 +1127,12 @@ function setSyncBox(msg, cls) {
   el.className = 'sync-box' + (cls?' '+cls:'');
 }
 
-function showLoad(on) { document.getElementById('loading').className='loading'+(on?' show':''); }
+function showLoad(on, text) {
+  const el = document.getElementById('loading');
+  el.className = 'loading' + (on ? ' show' : '');
+  if (text) { const s = el.querySelector('span'); if (s) s.textContent = text; }
+  else { const s = el.querySelector('span'); if (s) s.textContent = '処理中...'; }
+}
 
 let toastT;
 function toast(msg, type) {
