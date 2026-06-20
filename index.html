@@ -373,7 +373,13 @@ const LS = 'kobutu_v2';
 
 // ===== ローカルストレージ =====
 function load() { try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e) { return []; } }
-function save(d) { localStorage.setItem(LS, JSON.stringify(d)); }
+function save(d) {
+  try {
+    localStorage.setItem(LS, JSON.stringify(d));
+  } catch (e) {
+    throw new Error('ローカル保存に失敗しました（' + e.message + '）。プライベートブラウズモードを使用している場合は通常モードに切り替えてください。');
+  }
+}
 
 // ===== UID =====
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
@@ -656,17 +662,34 @@ function syncFromGAS() {
           const local = load();
           const localUIDs = new Set(local.map(r => String(r.uid)));
           let added = 0;
-          gasData.forEach(row => {
-            if (!localUIDs.has(String(row.uid))) {
-              if (row.sold === undefined) row.sold = false;
-              parseMetaTags(row); // memo内の[対応受入:xx]等を復元
-              local.push(row); added++;
+          const errors = [];
+          gasData.forEach((row, i) => {
+            try {
+              if (!localUIDs.has(String(row.uid))) {
+                if (row.sold === undefined) row.sold = false;
+                parseMetaTags(row); // memo内の[対応受入:xx]等を復元
+                local.push(row); added++;
+              }
+            } catch (e) {
+              errors.push('行' + i + '(uid=' + row.uid + '): ' + e.message);
             }
           });
-          save(local);
+          try {
+            save(local);
+          } catch (saveErr) {
+            showLoad(false);
+            setSyncBox(saveErr.message, 'err');
+            toast('保存に失敗しました', 'err');
+            return;
+          }
           updateNextIds(); updateHeaderCount();
-          setSyncBox('同期完了 ' + gasData.length + '件取得、' + added + '件追加（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
-          toast(added + '件追加しました', 'ok');
+          if (errors.length) {
+            setSyncBox('同期完了（一部エラー） ' + gasData.length + '件中' + added + '件追加、' + errors.length + '件エラー\n' + errors.slice(0,5).join('\n'), 'err');
+            toast(errors.length + '件でエラーが発生しました', 'err');
+          } else {
+            setSyncBox('同期完了 ' + gasData.length + '件取得、' + added + '件追加（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+            toast(added + '件追加しました', 'ok');
+          }
           buildPartnerButtons();
         } else {
           setSyncBox('取得失敗: ' + (res?.message || JSON.stringify(res)), 'err');
@@ -677,6 +700,7 @@ function syncFromGAS() {
         clearTimeout(timer);
         handleFailure(err && err.name === 'AbortError' ? 'タイムアウト' : '接続エラー');
       });
+
 
     function handleFailure(label) {
       if (retryCount < 2) {
