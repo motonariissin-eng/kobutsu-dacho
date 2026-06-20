@@ -579,28 +579,33 @@ function pushAllToGAS() {
     }
     const isFirst = idx === 0;
     const batch = batches[idx];
-    const cbName = 'cb_pushall_' + Date.now() + '_' + idx;
-    let timer;
-    window[cbName] = function(res) {
-      clearTimeout(timer);
-      cleanup();
-      if (res && res.status === 'ok') {
-        idx++; retryCount = 0;
-        showLoad(true, 'アップロード中... (' + idx + '/' + batches.length + ')');
-        setSyncBox('アップロード中... (' + idx + '/' + batches.length + ')', 'loading');
-        sendNext();
-      } else {
-        showLoad(false);
-        setSyncBox('アップロード失敗（バッチ' + (idx+1) + '）: ' + (res?.message || JSON.stringify(res)), 'err');
-        toast('アップロード失敗', 'err');
-      }
-    };
-    function cleanup() { clearTimeout(timer); const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
     const action = isFirst ? 'saveAllStart' : 'saveAllAppend';
-    const url = GAS + '?action=' + action + '&data=' + encodeURIComponent(JSON.stringify(batch)) + '&callback=' + cbName;
-    const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
+    const url = GAS + '?action=' + action + '&data=' + encodeURIComponent(JSON.stringify(batch));
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+
+    fetch(url, { signal: controller.signal })
+      .then(r => r.json())
+      .then(res => {
+        clearTimeout(timer);
+        if (res && res.status === 'ok') {
+          idx++; retryCount = 0;
+          showLoad(true, 'アップロード中... (' + idx + '/' + batches.length + ')');
+          setSyncBox('アップロード中... (' + idx + '/' + batches.length + ')', 'loading');
+          sendNext();
+        } else {
+          showLoad(false);
+          setSyncBox('アップロード失敗（バッチ' + (idx+1) + '）: ' + (res?.message || JSON.stringify(res)), 'err');
+          toast('アップロード失敗', 'err');
+        }
+      })
+      .catch(err => {
+        clearTimeout(timer);
+        handleFailure(err && err.name === 'AbortError' ? 'タイムアウト' : '接続エラー');
+      });
+
     function handleFailure(label) {
-      cleanup();
       if (retryCount < 2) {
         retryCount++;
         showLoad(true, '再試行中... (バッチ' + (idx+1) + ', ' + retryCount + '回目)');
@@ -611,9 +616,6 @@ function pushAllToGAS() {
         setSyncBox(label + '（バッチ' + (idx+1) + '／' + batch.length + '件、' + retryCount + '回再試行）。件数をさらに減らすか、通信環境を確認してください。', 'err');
       }
     }
-    s.onerror = function() { handleFailure('接続エラー'); };
-    timer = setTimeout(()=>{ handleFailure('タイムアウト'); }, 30000);
-    document.head.appendChild(s);
   }
   sendNext();
 }
@@ -621,20 +623,16 @@ function pushAllToGAS() {
 // ===== JSONP送信 =====
 function gasPost(rec, cb) {
   showLoad(true);
-  const cbName = 'cb_' + Date.now();
-  window[cbName] = function(res) {
-    cleanup(); showLoad(false); cb(res);
-  };
-  function cleanup() {
-    const s = document.getElementById('s_'+cbName); if(s) s.remove();
-    delete window[cbName];
-  }
-  const url = GAS + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec)) + '&callback=' + cbName;
-  const s = document.createElement('script');
-  s.id = 's_'+cbName; s.src = url;
-  s.onerror = function() { cleanup(); showLoad(false); toast('GAS接続エラー','err'); };
-  setTimeout(()=>{ cleanup(); showLoad(false); toast('タイムアウト','err'); }, 15000);
-  document.head.appendChild(s);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  const url = GAS + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
+  fetch(url, { signal: controller.signal })
+    .then(r => r.json())
+    .then(res => { clearTimeout(timer); showLoad(false); cb(res); })
+    .catch(err => {
+      clearTimeout(timer); showLoad(false);
+      toast(err && err.name === 'AbortError' ? 'タイムアウト' : 'GAS接続エラー', 'err');
+    });
 }
 
 // ===== GAS全件取得 =====
@@ -644,43 +642,43 @@ function syncFromGAS() {
   function attempt() {
     setSyncBox(retryCount ? ('再試行中...（' + retryCount + '回目）') : '取得中...', 'loading');
     showLoad(true, retryCount ? ('再試行中...（' + retryCount + '回目）') : '取得中...');
-    const cbName = 'cb_sync_' + Date.now() + '_' + retryCount;
-    let timer;
-    window[cbName] = function(res) {
-      toast('応答を受信しました', 'ok');
-      clearTimeout(timer);
-      cleanup();
-      showLoad(false);
-      if (res && Array.isArray(res.entries)) {
-        toast(res.entries.length + '件のデータを処理開始', 'ok');
-        const gasData = res.entries;
-        const local = load();
-        const localUIDs = new Set(local.map(r => String(r.uid)));
-        let added = 0;
-        gasData.forEach(row => {
-          if (!localUIDs.has(String(row.uid))) {
-            if (row.sold === undefined) row.sold = false;
-            parseMetaTags(row); // memo内の[対応受入:xx]等を復元
-            local.push(row); added++;
-          }
-        });
-        toast('処理完了、保存します', 'ok');
-        save(local);
-        updateNextIds(); updateHeaderCount();
-        setSyncBox('同期完了 ' + gasData.length + '件取得、' + added + '件追加（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
-        toast(added + '件追加しました', 'ok');
-        buildPartnerButtons();
-      } else {
-        setSyncBox('取得失敗: ' + (res?.message || JSON.stringify(res)), 'err');
-        toast('取得失敗', 'err');
-      }
-    };
-    function cleanup() { clearTimeout(timer); const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
-    const url = GAS + '?callback=' + cbName;
-    const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
-    s.onload = function(){ toast('スクリプト読み込み完了', 'ok'); };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+
+    fetch(GAS, { signal: controller.signal })
+      .then(r => r.json())
+      .then(res => {
+        clearTimeout(timer);
+        showLoad(false);
+        if (res && Array.isArray(res.entries)) {
+          const gasData = res.entries;
+          const local = load();
+          const localUIDs = new Set(local.map(r => String(r.uid)));
+          let added = 0;
+          gasData.forEach(row => {
+            if (!localUIDs.has(String(row.uid))) {
+              if (row.sold === undefined) row.sold = false;
+              parseMetaTags(row); // memo内の[対応受入:xx]等を復元
+              local.push(row); added++;
+            }
+          });
+          save(local);
+          updateNextIds(); updateHeaderCount();
+          setSyncBox('同期完了 ' + gasData.length + '件取得、' + added + '件追加（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+          toast(added + '件追加しました', 'ok');
+          buildPartnerButtons();
+        } else {
+          setSyncBox('取得失敗: ' + (res?.message || JSON.stringify(res)), 'err');
+          toast('取得失敗', 'err');
+        }
+      })
+      .catch(err => {
+        clearTimeout(timer);
+        handleFailure(err && err.name === 'AbortError' ? 'タイムアウト' : '接続エラー');
+      });
+
     function handleFailure(label) {
-      cleanup();
       if (retryCount < 2) {
         retryCount++;
         setTimeout(attempt, 800);
@@ -689,9 +687,6 @@ function syncFromGAS() {
         setSyncBox(label + '（' + retryCount + '回再試行しても失敗）。通信環境を確認してください。', 'err');
       }
     }
-    s.onerror = function(){ handleFailure('接続エラー'); };
-    timer = setTimeout(()=>{ handleFailure('タイムアウト'); }, 30000);
-    document.head.appendChild(s);
   }
   attempt();
 }
@@ -700,22 +695,23 @@ function syncFromGAS() {
 // GASに ping action は存在しないため、全件取得が成功するかどうかで判定する
 function pingGAS() {
   setSyncBox('接続確認中...', 'loading');
-  const cbName = 'cb_ping_' + Date.now();
-  window[cbName] = function(res) {
-    cleanup();
-    if (res && Array.isArray(res.entries)) {
-      const n = res.entries.length;
-      setSyncBox('✓ GAS接続OK（台帳 ' + n + '件、' + new Date().toLocaleTimeString('ja-JP') + '）', 'ok');
-    } else {
-      setSyncBox('応答: ' + (res?.message || JSON.stringify(res)), 'err');
-    }
-  };
-  function cleanup() { const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
-  const url = GAS + '?callback=' + cbName;
-  const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
-  s.onerror=function(){ cleanup(); setSyncBox('接続エラー','err'); };
-  setTimeout(()=>{ cleanup(); }, 10000);
-  document.head.appendChild(s);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  fetch(GAS, { signal: controller.signal })
+    .then(r => r.json())
+    .then(res => {
+      clearTimeout(timer);
+      if (res && Array.isArray(res.entries)) {
+        const n = res.entries.length;
+        setSyncBox('✓ GAS接続OK（台帳 ' + n + '件、' + new Date().toLocaleTimeString('ja-JP') + '）', 'ok');
+      } else {
+        setSyncBox('応答: ' + (res?.message || JSON.stringify(res)), 'err');
+      }
+    })
+    .catch(err => {
+      clearTimeout(timer);
+      setSyncBox(err && err.name === 'AbortError' ? 'タイムアウト' : '接続エラー', 'err');
+    });
 }
 
 // ===== 台帳一覧 =====
