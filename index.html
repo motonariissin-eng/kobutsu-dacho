@@ -535,13 +535,28 @@ function pushAllToGAS() {
   if (!data.length) { toast('ローカルにデータがありません', 'err'); return; }
   if (!confirm('ローカルの' + data.length + '件で、GAS側のデータを完全に上書きします。よろしいですか？')) return;
 
-  const BATCH = 30; // 1回のGETで送る件数（URL長制限対策）
+  // 日本語が多いとURLエンコードで膨らみ、件数固定だとURLが長すぎて
+  // 送信に失敗することがあるため、エンコード後の文字数を基準に動的分割する。
+  const MAX_URL_CHARS = 1800;
   const batches = [];
-  for (let i = 0; i < data.length; i += BATCH) batches.push(data.slice(i, i + BATCH));
+  let current = [];
+  let currentLen = 0;
+  data.forEach(rec => {
+    const encLen = encodeURIComponent(JSON.stringify(rec)).length;
+    if (current.length && currentLen + encLen > MAX_URL_CHARS) {
+      batches.push(current);
+      current = [];
+      currentLen = 0;
+    }
+    current.push(rec);
+    currentLen += encLen;
+  });
+  if (current.length) batches.push(current);
 
   setSyncBox('アップロード中... (0/' + batches.length + ')', 'loading'); showLoad(true);
 
   let idx = 0;
+  let retryCount = 0;
   function sendNext() {
     if (idx >= batches.length) {
       showLoad(false);
@@ -552,10 +567,12 @@ function pushAllToGAS() {
     const isFirst = idx === 0;
     const batch = batches[idx];
     const cbName = 'cb_pushall_' + Date.now() + '_' + idx;
+    let timer;
     window[cbName] = function(res) {
+      clearTimeout(timer);
       cleanup();
       if (res && res.status === 'ok') {
-        idx++;
+        idx++; retryCount = 0;
         setSyncBox('アップロード中... (' + idx + '/' + batches.length + ')', 'loading');
         sendNext();
       } else {
@@ -568,8 +585,18 @@ function pushAllToGAS() {
     const action = isFirst ? 'saveAllStart' : 'saveAllAppend';
     const url = GAS + '?action=' + action + '&data=' + encodeURIComponent(JSON.stringify(batch)) + '&callback=' + cbName;
     const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
-    s.onerror = function() { cleanup(); showLoad(false); setSyncBox('接続エラー（バッチ' + (idx+1) + '）','err'); };
-    setTimeout(()=>{ cleanup(); }, 20000);
+    s.onerror = function() {
+      cleanup();
+      if (retryCount < 2) {
+        retryCount++;
+        setSyncBox('再試行中... (バッチ' + (idx+1) + ', ' + retryCount + '回目)', 'loading');
+        setTimeout(sendNext, 800);
+      } else {
+        showLoad(false);
+        setSyncBox('接続エラー（バッチ' + (idx+1) + '／' + batch.length + '件、' + retryCount + '回再試行）。件数をさらに減らすか、通信環境を確認してください。', 'err');
+      }
+    };
+    timer = setTimeout(()=>{ cleanup(); }, 20000);
     document.head.appendChild(s);
   }
   sendNext();
