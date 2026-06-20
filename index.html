@@ -539,6 +539,7 @@ function submitOut() {
 // submitOutで埋め込んだ [対応受入:5][合計金額:50000][作業費:3000] を解析してフィールドに戻す
 function parseMetaTags(row) {
   if (!row.memo) return;
+  if (typeof row.memo !== 'string') row.memo = String(row.memo);
   const m1 = row.memo.match(/\[対応受入:([^\]]+)\]/);
   const m2 = row.memo.match(/\[合計金額:([^\]]+)\]/);
   const m3 = row.memo.match(/\[作業費:([^\]]+)\]/);
