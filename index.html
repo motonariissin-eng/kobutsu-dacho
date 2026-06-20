@@ -871,7 +871,11 @@ function showDetail(u) {
     ['車台番号', f.frame],
     ['年式', d.age],
     ['数量', d.qty],
-    ['価格', d.price ? '¥'+Number(d.price).toLocaleString() : ''],
+    ['価格', (() => {
+      const t = parseInt(d.totalPrice);
+      const amt = (isOutKubun(d.kubun) && !isNaN(t) && t) ? t : d.price;
+      return amt ? '¥' + Number(amt).toLocaleString() : '';
+    })()],
     ['相手方', d.name],
     ['住所', d.address],
     ['職業', d.job],
