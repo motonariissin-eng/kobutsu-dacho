@@ -196,7 +196,9 @@
     <div class="field"><label>取引年月日 *</label><input type="date" id="out-date"></div>
     <div class="field">
       <label>対応する受入番号（在庫から選択）</label>
+      <input type="text" id="out-linked-search" placeholder="車台番号・車名・メーカー・年式・受入番号で絞り込み" oninput="renderLinkedOptions()" style="margin-bottom:6px">
       <select id="out-linked"><option value="">（紐付けなし）</option></select>
+      <div id="out-linked-count" style="font-size:11px;color:var(--text2);margin-top:3px"></div>
     </div>
     <div class="field">
       <label>品目・種別 *</label>
@@ -923,20 +925,17 @@ function editEntry() {
     document.getElementById('out-date').value = normalizeDateStr(d.date) || '';
 
     // 紐付け中の受入は在庫選択肢から除外されているため、編集中の自分自身の分だけ選択肢に追加する
-    const sel = document.getElementById('out-linked');
-    if (d.linkedInId && !sel.querySelector('option[value="' + d.linkedInId + '"]')) {
+    if (d.linkedInId && !stockCache.some(s => String(s.id) === String(d.linkedInId))) {
       const inRec = load().find(r => String(r.id) === String(d.linkedInId) && isInKubun(r.kubun));
-      const opt = document.createElement('option');
-      opt.value = d.linkedInId;
       if (inRec) {
         const f2 = parseFeature(inRec.feature);
-        opt.textContent = d.linkedInId + ' — ' + [f2.maker, f2.model].filter(Boolean).join(' ') + '（編集中）';
+        stockCache.push({ id: d.linkedInId, maker: f2.maker || '', model: f2.model || '', frame: f2.frame || '', age: inRec.age || '', category: inRec.category || '', editing: true });
       } else {
-        opt.textContent = d.linkedInId + '（編集中・対応する受入データが見つかりません）';
+        stockCache.push({ id: d.linkedInId, maker: '（編集中・対応する受入データが見つかりません）', model: '', frame: '', age: '', category: '', editing: true });
       }
-      sel.appendChild(opt);
+      renderLinkedOptions();
     }
-    sel.value = d.linkedInId || '';
+    document.getElementById('out-linked').value = d.linkedInId || '';
 
     document.getElementById('out-category').value = d.category || '';
     document.getElementById('out-maker').value = f.maker || '';
@@ -993,15 +992,51 @@ function deleteEntry() {
 }
 
 // ===== 払出フォーム：在庫選択肢 =====
+// 在庫一覧をキャッシュしておき、検索ボックスの入力に応じて選択肢を絞り込む
+let stockCache = [];
+
 function updateLinkedSelect() {
   const all = load();
-  const data = all.filter(d => isInKubun(d.kubun) && !all.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id)));
-  const sel = document.getElementById('out-linked');
-  sel.innerHTML = '<option value="">（紐付けなし）</option>' +
-    data.map(d => {
+  stockCache = all
+    .filter(d => isInKubun(d.kubun) && !all.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id)))
+    .map(d => {
       const f = parseFeature(d.feature);
-      return `<option value="${d.id}">${d.id} — ${[f.maker,f.model].filter(Boolean).join(' ')}</option>`;
+      return { id: d.id, maker: f.maker || '', model: f.model || '', frame: f.frame || '', age: d.age || '', category: d.category || '' };
+    });
+  const searchEl = document.getElementById('out-linked-search');
+  if (searchEl) searchEl.value = '';
+  renderLinkedOptions();
+}
+
+function renderLinkedOptions() {
+  const sel = document.getElementById('out-linked');
+  const prevVal = sel.value;
+  const kw = (document.getElementById('out-linked-search')?.value || '').trim().toLowerCase();
+
+  const filtered = !kw ? stockCache : stockCache.filter(d => {
+    const hay = [d.id, d.maker, d.model, d.frame, d.age, d.category].join(' ').toLowerCase();
+    return hay.includes(kw);
+  });
+
+  sel.innerHTML = '<option value="">（紐付けなし）</option>' +
+    filtered.map(d => {
+      const label = [d.maker, d.model].filter(Boolean).join(' ');
+      const sub = [d.frame, d.age ? d.age + '年' : ''].filter(Boolean).join(' / ');
+      const tail = (sub ? '（' + sub + '）' : '') + (d.editing ? '（編集中）' : '');
+      return `<option value="${d.id}">${d.id} — ${label}${tail}</option>`;
     }).join('');
+
+  // 直前に選択していた値がフィルタ後にも存在するなら復元する
+  if (prevVal && sel.querySelector('option[value="' + prevVal + '"]')) {
+    sel.value = prevVal;
+  }
+
+  const countEl = document.getElementById('out-linked-count');
+  if (countEl) {
+    countEl.textContent = kw
+      ? `${filtered.length} / ${stockCache.length} 件表示中`
+      : `在庫 ${stockCache.length} 件`;
+  }
 }
 
 // ===== 業者マスタ（固定4件） =====
@@ -1067,7 +1102,7 @@ function clearIn() {
 }
 
 function clearOut() {
-  ['out-linked','out-category','out-maker','out-model','out-frame','out-age','out-total','out-price','out-age2','out-idMethod','out-idNo','out-name','out-address','out-job','out-memo']
+  ['out-linked','out-linked-search','out-category','out-maker','out-model','out-frame','out-age','out-total','out-price','out-age2','out-idMethod','out-idNo','out-name','out-address','out-job','out-memo']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('out-qty').value='1';
   document.getElementById('out-date').value = todayISO();
@@ -1075,6 +1110,7 @@ function clearOut() {
   serviceRowCount = 0;
   calcOutPrice();
   if (editMode === 'out') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); updateLinkedSelect(); }
+  else { renderLinkedOptions(); }
   document.querySelector('#t-out .btn-primary').textContent = 'GASに保存';
 }
 
