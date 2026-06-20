@@ -593,22 +593,23 @@ function pushAllToGAS() {
         toast('アップロード失敗', 'err');
       }
     };
-    function cleanup() { const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
+    function cleanup() { clearTimeout(timer); const s=document.getElementById('s_'+cbName); if(s) s.remove(); delete window[cbName]; }
     const action = isFirst ? 'saveAllStart' : 'saveAllAppend';
     const url = GAS + '?action=' + action + '&data=' + encodeURIComponent(JSON.stringify(batch)) + '&callback=' + cbName;
     const s = document.createElement('script'); s.id='s_'+cbName; s.src=url;
-    s.onerror = function() {
+    function handleFailure(label) {
       cleanup();
       if (retryCount < 2) {
         retryCount++;
-        setSyncBox('再試行中... (バッチ' + (idx+1) + ', ' + retryCount + '回目)', 'loading');
+        setSyncBox('再試行中... (バッチ' + (idx+1) + ', ' + retryCount + '回目／' + label + ')', 'loading');
         setTimeout(sendNext, 800);
       } else {
         showLoad(false);
-        setSyncBox('接続エラー（バッチ' + (idx+1) + '／' + batch.length + '件、' + retryCount + '回再試行）。件数をさらに減らすか、通信環境を確認してください。', 'err');
+        setSyncBox(label + '（バッチ' + (idx+1) + '／' + batch.length + '件、' + retryCount + '回再試行）。件数をさらに減らすか、通信環境を確認してください。', 'err');
       }
-    };
-    timer = setTimeout(()=>{ cleanup(); }, 20000);
+    }
+    s.onerror = function() { handleFailure('接続エラー'); };
+    timer = setTimeout(()=>{ handleFailure('タイムアウト'); }, 45000);
     document.head.appendChild(s);
   }
   sendNext();
