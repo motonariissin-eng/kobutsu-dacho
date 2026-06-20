@@ -324,6 +324,9 @@
     <div id="cleanupBtnWrap" style="display:none;margin-top:8px">
       <button class="btn btn-danger" onclick="removeBlankKubun()">受入・払出以外のデータを削除する</button>
     </div>
+    <div id="dupCleanupBtnWrap" style="display:none;margin-top:8px">
+      <button class="btn btn-danger" onclick="removeDuplicateUids()">uid重複を解消する（各uidで最も古い1件だけ残す）</button>
+    </div>
   </div>
 
   <div class="card">
@@ -358,6 +361,7 @@
     <h3 id="m-title">詳細</h3>
     <div id="m-body"></div>
     <div class="btn-group" style="margin-top:14px">
+      <button class="btn btn-primary" onclick="editEntry()">編集</button>
       <button class="btn btn-danger" onclick="deleteEntry()">ローカルから削除</button>
       <button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
     </div>
@@ -433,10 +437,12 @@ function tab(id, btn) {
 // 実際のGASスキーマ: uid,id,date,kubun,category,qty,feature,price,age,idMethod,idNo,name,address,job,memo,createdAt,sold
 // inId / soldEntryId / linkedInId / totalPrice / serviceFee はGAS側に列がないため保存されない
 function submitIn() {
-  const nextIn = nextInId();
+  const isEditing = editMode === 'in';
+  const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
+  const nextIn = (isEditing && existing) ? existing.id : nextInId();
 
   const rec = {
-    uid: uid(),
+    uid: (isEditing && existing) ? existing.uid : uid(),
     id: nextIn,
     date: v('in-date'),
     kubun: '受入（買受）',
@@ -451,13 +457,28 @@ function submitIn() {
     address: v('in-address'),
     job: v('in-job'),
     memo: v('in-memo'),
-    sold: false,
-    createdAt: new Date().toISOString()
+    sold: (isEditing && existing) ? existing.sold : false,
+    createdAt: (isEditing && existing) ? existing.createdAt : new Date().toISOString()
   };
 
   if (!rec.date || !rec.category || !v('in-model') || !rec.name) {
     toast('必須項目（日付・種別・車名・相手方）を入力してください', 'err'); return;
   }
+
+  if (isEditing) {
+    if (!existing) { toast('編集対象が見つかりません（削除された可能性があります）', 'err'); editMode = null; editUID = null; return; }
+    const all = load();
+    const idx = all.findIndex(r => String(r.uid) === String(editUID));
+    if (idx < 0) { toast('編集対象が見つかりません', 'err'); return; }
+    all[idx] = rec;
+    save(all);
+    updateNextIds(); updateHeaderCount();
+    toast('受入 ' + nextIn + ' を更新しました（ローカルのみ。GASへ反映するには設定タブの「ローカル全件をGASに上書き送信」を実行してください）', 'ok');
+    editMode = null; editUID = null;
+    clearIn();
+    return;
+  }
+
   gasPost(rec, function(res) {
     if (res.status === 'ok') {
       const all = load(); all.push(rec); save(all);
@@ -473,7 +494,9 @@ function submitIn() {
 // ===== 払出保存 =====
 // linkedInId・合計金額・作業費明細は memo に埋め込んで記録する（GASに専用列がないため）
 function submitOut() {
-  const nextOut = nextOutId();
+  const isEditing = editMode === 'out';
+  const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
+  const nextOut = (isEditing && existing) ? existing.id : nextOutId();
 
   calcOutPrice(); // hidden の out-price（本体金額）を最新化
   const linkedInId = v('out-linked');
@@ -490,7 +513,7 @@ function submitOut() {
   const fullMemo = [metaTags.join(''), v('out-memo'), serviceMemo].filter(Boolean).join(' ');
 
   const rec = {
-    uid: uid(),
+    uid: (isEditing && existing) ? existing.uid : uid(),
     id: nextOut,
     date: v('out-date'),
     kubun: '払出（売渡）',
@@ -505,8 +528,8 @@ function submitOut() {
     address: v('out-address'),
     job: v('out-job'),
     memo: fullMemo,
-    sold: false,
-    createdAt: new Date().toISOString(),
+    sold: (isEditing && existing) ? existing.sold : false,
+    createdAt: (isEditing && existing) ? existing.createdAt : new Date().toISOString(),
     // ローカル表示用（GASには保存されないが、ローカルキャッシュには残す）
     linkedInId: linkedInId,
     totalPrice: totalPrice,
@@ -516,6 +539,33 @@ function submitOut() {
   if (!rec.date || !rec.category || !v('out-model') || !rec.name) {
     toast('必須項目（日付・種別・車名・相手方）を入力してください', 'err'); return;
   }
+
+  if (isEditing) {
+    if (!existing) { toast('編集対象が見つかりません（削除された可能性があります）', 'err'); editMode = null; editUID = null; return; }
+    const all = load();
+    const idx = all.findIndex(r => String(r.uid) === String(editUID));
+    if (idx < 0) { toast('編集対象が見つかりません', 'err'); return; }
+
+    // 紐付け先が変わった場合、旧・新の受入レコードの売済フラグを調整（ローカルのみ）
+    const oldLinked = existing.linkedInId;
+    if (oldLinked && String(oldLinked) !== String(linkedInId)) {
+      const oi = all.findIndex(r => String(r.id) === String(oldLinked) && isInKubun(r.kubun));
+      if (oi >= 0) all[oi].sold = false;
+    }
+    if (linkedInId) {
+      const ni = all.findIndex(r => String(r.id) === String(linkedInId) && isInKubun(r.kubun));
+      if (ni >= 0) all[ni].sold = true;
+    }
+
+    all[idx] = rec;
+    save(all);
+    updateNextIds(); updateHeaderCount();
+    toast('払出 ' + nextOut + ' を更新しました（ローカルのみ。GASへ反映するには設定タブの「ローカル全件をGASに上書き送信」を実行してください）', 'ok');
+    editMode = null; editUID = null;
+    clearOut();
+    return;
+  }
+
   gasPost(rec, function(res) {
     if (res.status === 'ok') {
       const all = load();
@@ -666,10 +716,12 @@ function syncFromGAS() {
           const errors = [];
           gasData.forEach((row, i) => {
             try {
-              if (!localUIDs.has(String(row.uid))) {
+              const u = String(row.uid);
+              if (!localUIDs.has(u)) {
                 if (row.sold === undefined) row.sold = false;
                 parseMetaTags(row); // memo内の[対応受入:xx]等を復元
                 local.push(row); added++;
+                localUIDs.add(u); // GAS側に同一uidの行が複数あっても二重追加しない
               }
             } catch (e) {
               errors.push('行' + i + '(uid=' + row.uid + '): ' + e.message);
@@ -787,6 +839,8 @@ function renderList() {
 
 // ===== 詳細モーダル =====
 let currentUID = null;
+let editMode = null; // null | 'in' | 'out'
+let editUID = null;
 function showDetail(u) {
   const d = load().find(r => String(r.uid) === String(u));
   if (!d) return;
@@ -826,6 +880,96 @@ function closeModal(e) {
     document.getElementById('overlay').classList.remove('open');
     currentUID = null;
   }
+}
+
+// ===== 既存レコードの編集 =====
+// GAS側に「1件だけ更新するAPI」は存在しない（save=追加専用、saveAllStart/saveAllAppend=全件上書き専用）ため、
+// 編集はローカルのみを書き換える。GASに反映するには設定タブの「ローカル全件をGASに上書き送信」を使う。
+function editEntry() {
+  if (!currentUID) return;
+  const d = load().find(r => String(r.uid) === String(currentUID));
+  if (!d) return;
+  const isIn = isInKubun(d.kubun);
+  const f = parseFeature(d.feature);
+  closeModal();
+
+  if (isIn) {
+    editMode = 'in'; editUID = d.uid;
+    tab('t-in', document.querySelectorAll('nav button')[0]);
+    document.getElementById('in-date').value = d.date || '';
+    document.getElementById('in-category').value = d.category || '';
+    document.getElementById('in-maker').value = f.maker || '';
+    document.getElementById('in-model').value = f.model || '';
+    document.getElementById('in-frame').value = f.frame || '';
+    document.getElementById('in-age').value = d.age || '';
+    document.getElementById('in-qty').value = d.qty || '1';
+    document.getElementById('in-price').value = d.price || '';
+    showInPrice();
+    document.getElementById('in-age2').value = d.age || '';
+    document.getElementById('in-idMethod').value = d.idMethod || '';
+    document.getElementById('in-idNo').value = d.idNo || '';
+    document.getElementById('in-name').value = d.name || '';
+    document.getElementById('in-address').value = d.address || '';
+    document.getElementById('in-job').value = d.job || '';
+    document.getElementById('in-memo').value = d.memo || '';
+    document.querySelector('#t-in .btn-primary').textContent = '更新を保存（編集中：受入-' + d.id + '）';
+  } else {
+    editMode = 'out'; editUID = d.uid;
+    tab('t-out', document.querySelectorAll('nav button')[1]); // updateLinkedSelect()が実行される
+
+    // 紐付け中の受入は在庫選択肢から除外されているため、編集中の自分自身の分だけ選択肢に追加する
+    const sel = document.getElementById('out-linked');
+    if (d.linkedInId && !sel.querySelector('option[value="' + d.linkedInId + '"]')) {
+      const inRec = load().find(r => String(r.id) === String(d.linkedInId) && isInKubun(r.kubun));
+      const opt = document.createElement('option');
+      opt.value = d.linkedInId;
+      if (inRec) {
+        const f2 = parseFeature(inRec.feature);
+        opt.textContent = d.linkedInId + ' — ' + [f2.maker, f2.model].filter(Boolean).join(' ') + '（編集中）';
+      } else {
+        opt.textContent = d.linkedInId + '（編集中・対応する受入データが見つかりません）';
+      }
+      sel.appendChild(opt);
+    }
+    sel.value = d.linkedInId || '';
+
+    document.getElementById('out-category').value = d.category || '';
+    document.getElementById('out-maker').value = f.maker || '';
+    document.getElementById('out-model').value = f.model || '';
+    document.getElementById('out-frame').value = f.frame || '';
+    document.getElementById('out-age').value = d.age || '';
+    document.getElementById('out-qty').value = d.qty || '1';
+    document.getElementById('out-total').value = d.totalPrice || d.price || '';
+    document.getElementById('service-rows').innerHTML = '';
+    serviceRowCount = 0;
+    // 個別の作業項目（品目ごとの内訳）はタグ化されておらず復元できないが、
+    // 作業費"合計"はserviceFeeとして保持されているため、1行にまとめて復元し
+    // 本体金額／作業費の按分が保存時に崩れないようにする。
+    if (d.serviceFee && parseInt(d.serviceFee) > 0) {
+      addServiceRow();
+      const lastRow = document.querySelector('#service-rows > div:last-child');
+      if (lastRow) {
+        const inputs = lastRow.querySelectorAll('input');
+        inputs[0].value = '（編集前の作業費合計・内訳は備考欄を確認）';
+        inputs[1].value = d.serviceFee;
+      }
+    }
+    calcOutPrice();
+    document.getElementById('out-age2').value = d.age || '';
+    document.getElementById('out-idMethod').value = d.idMethod || '';
+    document.getElementById('out-idNo').value = d.idNo || '';
+    document.getElementById('out-name').value = d.name || '';
+    document.getElementById('out-address').value = d.address || '';
+    document.getElementById('out-job').value = d.job || '';
+    // memoに埋め込まれた付帯タグ（対応受入・合計金額・作業費）を取り除いた残りを表示
+    // ※個別の作業項目（品目名ごとの内訳）はタグ化されておらず備考に文字として混在しているため、
+    //   service-rowsへの個別復元はできない（このアプリのデータ構造上、確認できません）。
+    let memo = d.memo || '';
+    memo = memo.replace(/\[対応受入:[^\]]+\]/, '').replace(/\[合計金額:[^\]]+\]/, '').replace(/\[作業費:[^\]]+\]/, '').trim();
+    document.getElementById('out-memo').value = memo;
+    document.querySelector('#t-out .btn-primary').textContent = '更新を保存（編集中：払出-' + d.id + '）';
+  }
+  toast('編集モードにしました。保存すると上書きされます（GASへは反映されません）', 'ok');
 }
 
 function deleteEntry() {
@@ -912,6 +1056,9 @@ function clearIn() {
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('in-qty').value='1';
   document.getElementById('in-date').value = todayISO();
+  showInPrice();
+  if (editMode === 'in') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); }
+  document.querySelector('#t-in .btn-primary').textContent = 'GASに保存';
 }
 
 function clearOut() {
@@ -922,6 +1069,8 @@ function clearOut() {
   document.getElementById('service-rows').innerHTML = '';
   serviceRowCount = 0;
   calcOutPrice();
+  if (editMode === 'out') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); updateLinkedSelect(); }
+  document.querySelector('#t-out .btn-primary').textContent = 'GASに保存';
 }
 
 function todayISO() { return new Date().toISOString().slice(0,10); }
@@ -1042,8 +1191,10 @@ function checkDataBreakdown() {
     out += '  重複あり: ' + dupUids.length + '種類のuidが重複しています（合計' + dupUids.reduce((s,[,c])=>s+c,0) + '件分）\n';
     dupUids.slice(0, 10).forEach(([u,c]) => { out += '    uid=' + u + ' が' + c + '件\n'; });
     if (dupUids.length > 10) out += '    ...他' + (dupUids.length-10) + '種類\n';
+    document.getElementById('dupCleanupBtnWrap').style.display = 'block';
   } else {
     out += '  重複なし\n';
+    document.getElementById('dupCleanupBtnWrap').style.display = 'none';
   }
 
   const blanks = data.filter(r => !isInKubun(r.kubun) && !isOutKubun(r.kubun));
@@ -1074,6 +1225,52 @@ function removeBlankKubun() {
   document.getElementById('cleanupBtnWrap').style.display = 'none';
   document.getElementById('breakdownResult').style.display = 'none';
   toast(blanks.length + '件を削除しました（残り' + cleaned.length + '件）', 'ok');
+}
+
+// ===== uid重複の解消（各uidで最も古いcreatedAtの1件だけ残す） =====
+// 注意：ローカルのみの変更。GAS側にも反映する場合は、正しい方のデバイスで
+// 「ローカル全件をGASに上書き送信」を実行する必要がある（このアプリ単体では確認できない）。
+function removeDuplicateUids() {
+  const data = load();
+  const countByUid = {};
+  data.forEach(r => {
+    const u = String(r.uid || '');
+    if (u) countByUid[u] = (countByUid[u] || 0) + 1;
+  });
+  const dupUids = new Set(Object.keys(countByUid).filter(u => countByUid[u] > 1));
+  if (!dupUids.size) { toast('uidの重複はありません', 'err'); return; }
+
+  const totalDupRecords = Array.from(dupUids).reduce((s,u) => s + countByUid[u], 0);
+  if (!confirm('uidが重複している ' + dupUids.size + '種類・合計' + totalDupRecords + '件のうち、\n各uidで作成日時が最も古い1件のみを残し、残りを削除します。\n\n削除前に必ず「JSONバックアップ」でバックアップを取ってください。\nよろしいですか？')) return;
+
+  const kept = {};
+  const result = [];
+  data.forEach(r => {
+    const u = String(r.uid || '');
+    if (!dupUids.has(u)) { result.push(r); return; }
+    if (!kept[u]) {
+      kept[u] = r;
+      result.push(r);
+    } else {
+      const aTime = new Date(kept[u].createdAt || 0).getTime();
+      const bTime = new Date(r.createdAt || 0).getTime();
+      if (bTime < aTime) {
+        const idx = result.indexOf(kept[u]);
+        if (idx >= 0) result.splice(idx, 1);
+        result.push(r);
+        kept[u] = r;
+      }
+      // bTime >= aTime の場合はrを破棄（resultに追加しない）
+    }
+  });
+
+  const removedCount = data.length - result.length;
+  save(result);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+  document.getElementById('dupCleanupBtnWrap').style.display = 'none';
+  document.getElementById('breakdownResult').style.display = 'none';
+  toast(removedCount + '件の重複を削除しました（残り' + result.length + '件）', 'ok');
 }
 
 // ===== JSONバックアップ・復元 =====
