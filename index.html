@@ -327,6 +327,9 @@
     <div id="dupCleanupBtnWrap" style="display:none;margin-top:8px">
       <button class="btn btn-danger" onclick="removeDuplicateUids()">uid重複を解消する（各uidで最も古い1件だけ残す）</button>
     </div>
+    <div class="btn-group" style="margin-top:8px">
+      <button class="btn" onclick="fixDateFormats()">取引日の形式異常をチェック・修正</button>
+    </div>
   </div>
 
   <div class="card">
@@ -719,6 +722,7 @@ function syncFromGAS() {
               const u = String(row.uid);
               if (!localUIDs.has(u)) {
                 if (row.sold === undefined) row.sold = false;
+                row.date = normalizeDateStr(row.date);
                 parseMetaTags(row); // memo内の[対応受入:xx]等を復元
                 local.push(row); added++;
                 localUIDs.add(u); // GAS側に同一uidの行が複数あっても二重追加しない
@@ -896,7 +900,7 @@ function editEntry() {
   if (isIn) {
     editMode = 'in'; editUID = d.uid;
     tab('t-in', document.querySelectorAll('nav button')[0]);
-    document.getElementById('in-date').value = d.date || '';
+    document.getElementById('in-date').value = normalizeDateStr(d.date) || '';
     document.getElementById('in-category').value = d.category || '';
     document.getElementById('in-maker').value = f.maker || '';
     document.getElementById('in-model').value = f.model || '';
@@ -916,6 +920,7 @@ function editEntry() {
   } else {
     editMode = 'out'; editUID = d.uid;
     tab('t-out', document.querySelectorAll('nav button')[1]); // updateLinkedSelect()が実行される
+    document.getElementById('out-date').value = normalizeDateStr(d.date) || '';
 
     // 紐付け中の受入は在庫選択肢から除外されているため、編集中の自分自身の分だけ選択肢に追加する
     const sel = document.getElementById('out-linked');
@@ -1074,6 +1079,16 @@ function clearOut() {
 }
 
 function todayISO() { return new Date().toISOString().slice(0,10); }
+
+// GAS側のDate型セルがJSON化される際に "YYYY-MM-DDT00:00:00.000Z" 形式になることがあるため、
+// 取引日(date)欄をプレーンな "YYYY-MM-DD" に正規化する。
+// 時刻部分がちょうど UTC 0時の場合のみ安全にスライス変換できる（タイムゾーンによる日付ずれが起きない）。
+// それ以外の時刻が入っている場合は自動変換すると日付がずれる恐れがあるため、変換しない。
+function normalizeDateStr(s) {
+  if (typeof s !== 'string') return s;
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})T00:00:00\.000Z$/);
+  return m ? m[1] : s;
+}
 function setToday() {
   document.getElementById('in-date').value = todayISO();
   document.getElementById('out-date').value = todayISO();
@@ -1271,6 +1286,53 @@ function removeDuplicateUids() {
   document.getElementById('dupCleanupBtnWrap').style.display = 'none';
   document.getElementById('breakdownResult').style.display = 'none';
   toast(removedCount + '件の重複を削除しました（残り' + result.length + '件）', 'ok');
+}
+
+// ===== 取引日(date)の形式異常をチェック・修正 =====
+// GAS側のDate型セルがJSON化される際に "YYYY-MM-DDT00:00:00.000Z" 形式で
+// 返ってくることがあり、syncFromGASでそのままローカルに取り込まれると発生する。
+// 時刻部分がちょうどUTC0時のものだけ安全にYYYY-MM-DDへ自動変換し、
+// それ以外（タイムゾーン変換で日付がずれている可能性がある）は一覧表示して手動確認を促す。
+function fixDateFormats() {
+  const data = load();
+  const safePattern = /^(\d{4}-\d{2}-\d{2})T00:00:00\.000Z$/;
+  const anyTimePattern = /^\d{4}-\d{2}-\d{2}T/;
+  let fixed = 0;
+  const ambiguous = [];
+
+  data.forEach(r => {
+    if (typeof r.date === 'string') {
+      const m = r.date.match(safePattern);
+      if (m) {
+        r.date = m[1];
+        fixed++;
+      } else if (anyTimePattern.test(r.date)) {
+        ambiguous.push((isInKubun(r.kubun) ? '受入' : isOutKubun(r.kubun) ? '払出' : r.kubun) + '-' + (r.id || '') + '：' + r.date);
+      }
+    }
+  });
+
+  if (!fixed && !ambiguous.length) { toast('取引日の形式異常は見つかりませんでした', 'err'); return; }
+
+  if (fixed) {
+    if (!confirm(fixed + '件の取引日を「YYYY-MM-DDT00:00:00.000Z」形式から「YYYY-MM-DD」形式に書き換えます。\n削除ではなく書き換えですが、念のためバックアップを推奨します。よろしいですか？')) return;
+    save(data);
+    updateNextIds(); updateHeaderCount(); updateStats();
+    if (document.getElementById('t-list').classList.contains('active')) renderList();
+  }
+
+  let msg = fixed ? ('【自動修正】' + fixed + '件の取引日をYYYY-MM-DD形式に修正しました\n\n') : '';
+  if (ambiguous.length) {
+    msg += '【要確認】以下は時刻が00:00:00.000Zではないため自動変換していません\n（タイムゾーン換算で日付がずれている可能性があるため、内容を確認のうえ「編集」から手動で直してください）\n';
+    msg += ambiguous.slice(0, 15).join('\n');
+    if (ambiguous.length > 15) msg += '\n...他' + (ambiguous.length - 15) + '件';
+  }
+  const box = document.getElementById('breakdownResult');
+  box.style.display = 'block';
+  box.textContent = msg;
+
+  if (fixed && !ambiguous.length) toast(fixed + '件の取引日を修正しました', 'ok');
+  else if (ambiguous.length) toast('要確認の取引日が' + ambiguous.length + '件あります（下に一覧表示）', 'err');
 }
 
 // ===== JSONバックアップ・復元 =====
