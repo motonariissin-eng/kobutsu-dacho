@@ -806,6 +806,12 @@ function pingGAS() {
 }
 
 // ===== 台帳一覧 =====
+// 払出は合計金額（totalPrice）があればそれを表示用価格として使う。なければ本体価格（price）で代替
+function displayPrice(d) {
+  const t = parseInt(d.totalPrice);
+  return (isOutKubun(d.kubun) && !isNaN(t) && t) ? t : d.price;
+}
+
 function renderList() {
   const kubun = document.getElementById('f-kubun').value;
   const cat = document.getElementById('f-cat').value;
@@ -846,7 +852,7 @@ function renderList() {
       <div class="e-cat">${d.category||''}</div>
       <div class="e-name">${[f.maker,f.model].filter(Boolean).join(' ')}</div>
       <div class="e-partner">${isIn?'仕入先':'売却先'}：${d.name||''}</div>
-      <div class="e-price">${d.price?'¥'+Number(d.price).toLocaleString():''}</div>
+      <div class="e-price">${(() => { const amt = displayPrice(d); return amt ? '¥'+Number(amt).toLocaleString() : ''; })()}</div>
     </div>`;
   }).join('');
 }
@@ -871,11 +877,7 @@ function showDetail(u) {
     ['車台番号', f.frame],
     ['年式', d.age],
     ['数量', d.qty],
-    ['価格', (() => {
-      const t = parseInt(d.totalPrice);
-      const amt = (isOutKubun(d.kubun) && !isNaN(t) && t) ? t : d.price;
-      return amt ? '¥' + Number(amt).toLocaleString() : '';
-    })()],
+    ['価格', (() => { const amt = displayPrice(d); return amt ? '¥' + Number(amt).toLocaleString() : ''; })()],
     ['相手方', d.name],
     ['住所', d.address],
     ['職業', d.job],
@@ -884,7 +886,7 @@ function showDetail(u) {
     ['書類番号', d.idNo],
     ['備考', d.memo],
     isOutKubun(d.kubun) ? ['対応受入番号', d.linkedInId] : null,
-    ['売却済', (isInKubun(d.kubun) && load().some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id))) ? 'はい' : 'いいえ'],
+    isIn ? ['売却済', load().some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id)) ? 'はい' : 'いいえ'] : null,
   ].filter(r => r && r[1]);
 
   document.getElementById('m-body').innerHTML = rows.map(([l,v])=>
