@@ -278,7 +278,7 @@
       <option>自動二輪車</option><option>原動機付自転車</option><option>バイク部品</option>
       <option>自動車</option><option>自動車部品</option><option>その他</option>
     </select>
-    <input type="text" id="f-text" placeholder="車名・相手方で検索" oninput="renderList()">
+    <input type="text" id="f-text" placeholder="車名・車台番号・相手方で検索" oninput="renderList()">
   </div>
   <div id="list-body" class="list"><p style="color:var(--text2);text-align:center;padding:20px">読み込み中...</p></div>
 </div>
@@ -836,7 +836,7 @@ function renderList() {
     if (cat && d.category !== cat) return false;
     if (txt) {
       const f = parseFeature(d.feature);
-      const s = (f.model+f.maker+d.name+'').toLowerCase();
+      const s = (f.model+f.maker+f.frame+d.name+'').toLowerCase();
       if (!s.includes(txt)) return false;
     }
     return true;
