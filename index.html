@@ -344,6 +344,18 @@
   </div>
 
   <div class="card">
+    <h2>受入⇔払出の自動紐付け</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">過去にGAS同期等で取り込んだデータは「対応する受入番号」が設定されていないことがあります。車台番号が一致する受入・払出のペアを自動で探して紐付けます（備考の手書きテキストは見ません。車台番号の完全一致のみで判定します）。</p>
+    <div class="btn-group">
+      <button class="btn" onclick="previewAutoLink()">紐付け候補をチェック</button>
+    </div>
+    <pre id="autoLinkResult" style="font-size:12px;white-space:pre-wrap;margin-top:8px;display:none;background:var(--bg2);padding:8px;border-radius:6px"></pre>
+    <div id="autoLinkApplyWrap" style="display:none;margin-top:8px">
+      <button class="btn btn-danger" onclick="applyAutoLink()">上記の候補を一括で紐付ける</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>JSONバックアップ</h2>
     <p style="font-size:12px;color:var(--text2);margin-bottom:8px">ID整理など大きな操作の前に、現在のローカルデータをファイルに保存しておくことをおすすめします。</p>
     <div class="btn-group">
@@ -1431,6 +1443,122 @@ function fixUridashiKubun() {
   box.style.display = 'block';
   box.textContent = '【修正完了】以下の' + targets.length + '件を「払出（売却）」に修正しました\n' + list;
   toast(targets.length + '件を「払出（売却）」に修正しました', 'ok');
+}
+
+// ===== 受入⇔払出の自動紐付け（車台番号の完全一致で判定） =====
+let autoLinkCandidates = []; // [{outUid, inId}]
+
+function previewAutoLink() {
+  const data = load();
+  const inRecs = data.filter(d => isInKubun(d.kubun));
+  const outRecs = data.filter(d => isOutKubun(d.kubun));
+
+  // すでに対応受入番号が設定済み（かつその受入が実在する）払出は対象外。
+  // それ以外の受入idは「空いている」とみなして候補探索に使う。
+  const usedInIds = new Set(
+    outRecs
+      .filter(o => o.linkedInId && inRecs.some(i => String(i.id) === String(o.linkedInId)))
+      .map(o => String(o.linkedInId))
+  );
+
+  const candidates = [];   // 1対1で一意に決まったペア
+  const ambiguous = [];    // 同じ車台番号の受入が複数あり自動判定できない
+  const noMatch = [];      // 車台番号が空、または一致する受入が見つからない
+  const alreadyLinked = []; // すでに紐付け済み
+
+  outRecs.forEach(o => {
+    if (o.linkedInId && inRecs.some(i => String(i.id) === String(o.linkedInId))) {
+      alreadyLinked.push(o);
+      return;
+    }
+    const frameO = (parseFeature(o.feature).frame || '').trim().toUpperCase();
+    if (!frameO) { noMatch.push(o); return; }
+
+    const matches = inRecs.filter(i => {
+      if (usedInIds.has(String(i.id))) return false;
+      const frameI = (parseFeature(i.feature).frame || '').trim().toUpperCase();
+      return frameI === frameO;
+    });
+
+    if (matches.length === 1) {
+      candidates.push({ out: o, in: matches[0] });
+      usedInIds.add(String(matches[0].id)); // この回の探索内で同じ受入を二重に使わない
+    } else if (matches.length > 1) {
+      ambiguous.push({ out: o, matches });
+    } else {
+      noMatch.push(o);
+    }
+  });
+
+  autoLinkCandidates = candidates.map(c => ({ outUid: c.out.uid, inId: c.in.id }));
+
+  let msg = '【自動紐付けできる候補】' + candidates.length + '件\n';
+  candidates.slice(0, 50).forEach(c => {
+    const f = parseFeature(c.out.feature);
+    msg += '  払出-' + (c.out.id || '') + ' ⇔ 受入-' + (c.in.id || '') + '（車台番号：' + f.frame + '）\n';
+  });
+  if (candidates.length > 50) msg += '  ...他' + (candidates.length - 50) + '件\n';
+
+  msg += '\n【すでに紐付け済み】' + alreadyLinked.length + '件\n';
+
+  msg += '\n【車台番号が空、または一致する受入が見つからない】' + noMatch.length + '件\n';
+  noMatch.slice(0, 15).forEach(o => {
+    const f = parseFeature(o.feature);
+    msg += '  払出-' + (o.id || '') + '：' + [f.maker, f.model].filter(Boolean).join(' ') + '（車台番号：' + (f.frame || 'なし') + '）\n';
+  });
+  if (noMatch.length > 15) msg += '  ...他' + (noMatch.length - 15) + '件（同じ車台番号の受入が登録されていない可能性があります）\n';
+
+  msg += '\n【同じ車台番号の受入が複数あり自動判定できない】' + ambiguous.length + '件\n';
+  ambiguous.slice(0, 15).forEach(a => {
+    const f = parseFeature(a.out.feature);
+    msg += '  払出-' + (a.out.id || '') + '（車台番号：' + f.frame + '）の候補→ 受入-' + a.matches.map(m => m.id).join('、受入-') + '\n';
+  });
+  if (ambiguous.length > 15) msg += '  ...他' + (ambiguous.length - 15) + '件（編集画面から手動で紐付けてください）\n';
+
+  const box = document.getElementById('autoLinkResult');
+  box.style.display = 'block';
+  box.textContent = msg;
+
+  const wrap = document.getElementById('autoLinkApplyWrap');
+  if (candidates.length) {
+    wrap.style.display = 'block';
+    toast(candidates.length + '件の紐付け候補が見つかりました。内容を確認して適用してください', 'ok');
+  } else {
+    wrap.style.display = 'none';
+    toast('車台番号が一致する自動紐付け候補は見つかりませんでした', 'err');
+  }
+}
+
+function applyAutoLink() {
+  if (!autoLinkCandidates.length) { toast('紐付け候補がありません。先に「紐付け候補をチェック」を押してください', 'err'); return; }
+  if (!confirm(autoLinkCandidates.length + '件を車台番号の一致にもとづいて一括で紐付けます。\n（払出側の「対応する受入番号」を設定し、備考に[対応受入:N]タグを追加します）\n\n念のためバックアップを推奨します。よろしいですか？')) return;
+
+  const data = load();
+  const byUid = new Map(data.map(r => [String(r.uid), r]));
+  let applied = 0;
+
+  autoLinkCandidates.forEach(c => {
+    const o = byUid.get(String(c.outUid));
+    if (!o) return;
+    o.linkedInId = c.inId;
+    // 既存の[対応受入:xx]タグがあれば置き換え、なければ先頭に追加
+    if (/\[対応受入:[^\]]+\]/.test(o.memo || '')) {
+      o.memo = o.memo.replace(/\[対応受入:[^\]]+\]/, '[対応受入:' + c.inId + ']');
+    } else {
+      o.memo = '[対応受入:' + c.inId + ']' + (o.memo || '');
+    }
+    applied++;
+  });
+
+  save(data);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+
+  autoLinkCandidates = [];
+  document.getElementById('autoLinkApplyWrap').style.display = 'none';
+  const box = document.getElementById('autoLinkResult');
+  box.textContent = '【適用完了】' + applied + '件を紐付けました。\n「内訳・重複をチェック」やデータ管理の合計表示で反映を確認してください。';
+  toast(applied + '件を紐付けました', 'ok');
 }
 
 // ===== JSONバックアップ・復元 =====
