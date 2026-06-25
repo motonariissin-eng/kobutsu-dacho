@@ -114,6 +114,15 @@
 </head>
 <body>
 
+<!-- メーカー入力用の候補リスト（一覧から選んでも、一覧にない文字を自由入力してもOK） -->
+<datalist id="maker-list">
+  <option value="HONDA">
+  <option value="SUZUKI">
+  <option value="YAMAHA">
+  <option value="KAWASAKI">
+  <option value="KYMCO">
+</datalist>
+
 <header>
   <h1>⚙ 古物台帳</h1>
   <span id="hCount">-</span>
@@ -142,7 +151,7 @@
         <option>自動車</option><option>自動車部品</option><option>その他</option>
       </select>
     </div>
-    <div class="field"><label>メーカー</label><input type="text" id="in-maker" placeholder="例：HONDA"></div>
+    <div class="field"><label>メーカー</label><input type="text" id="in-maker" list="maker-list" placeholder="例：HONDA（一覧から選択、または自由入力）"></div>
     <div class="field"><label>車名・品名 *</label><input type="text" id="in-model" placeholder="例：スーパーカブ110"></div>
     <div class="field"><label>車台番号（フレームNo）</label><input type="text" id="in-frame" placeholder="例：JA44-1002305"></div>
     <div class="row2">
@@ -208,7 +217,7 @@
         <option>自動車</option><option>自動車部品</option><option>その他</option>
       </select>
     </div>
-    <div class="field"><label>メーカー</label><input type="text" id="out-maker"></div>
+    <div class="field"><label>メーカー</label><input type="text" id="out-maker" list="maker-list" placeholder="一覧から選択、または自由入力"></div>
     <div class="field"><label>車名・品名 *</label><input type="text" id="out-model"></div>
     <div class="field"><label>車台番号</label><input type="text" id="out-frame"></div>
     <div class="row2">
@@ -294,19 +303,39 @@
 
 <!-- ===== データ管理 ===== -->
 <div id="t-manage" class="tab">
-  <div class="stats">
-    <div class="stat"><div class="stat-n" id="s-in">-</div><div class="stat-l">受入件数</div></div>
-    <div class="stat"><div class="stat-n" id="s-out">-</div><div class="stat-l">払出件数</div></div>
-    <div class="stat"><div class="stat-n" id="s-stock">-</div><div class="stat-l">在庫件数</div></div>
-    <div class="stat"><div class="stat-n" id="s-total">-</div><div class="stat-l">総件数</div></div>
-    <div class="stat"><div class="stat-n" id="s-in-amount" style="font-size:16px">-</div><div class="stat-l">受入合計金額</div></div>
-    <div class="stat">
-      <div class="stat-n" id="s-out-amount" style="font-size:22px">-</div>
-      <div class="stat-l">払出合計金額</div>
-      <div style="font-size:11px;color:var(--text2);margin-top:6px;border-top:1px solid var(--border);padding-top:6px">
-        サービス料金合計　<span id="s-out-service">-</span><br>
-        本体価格合計　<span id="s-out-body">-</span>
+  <div class="stats" style="grid-template-columns:1fr">
+    <div class="stat" style="text-align:left">
+      <div style="font-size:13px;color:var(--accent);font-weight:700;margin-bottom:8px">📥 受入</div>
+      <div style="display:flex;gap:16px;align-items:baseline">
+        <div><span id="s-in" style="font-size:22px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 件</span></div>
+        <div><span id="s-in-amount" style="font-size:18px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 合計金額</span></div>
       </div>
+    </div>
+
+    <div class="stat" style="text-align:left">
+      <div style="font-size:13px;color:var(--accent);font-weight:700;margin-bottom:8px">📤 払出</div>
+      <div style="display:flex;gap:16px;align-items:baseline">
+        <div><span id="s-out" style="font-size:22px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 件</span></div>
+        <div><span id="s-out-amount" style="font-size:18px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 合計金額</span></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
+        本体価格合計　<span id="s-out-body">-</span>　／　サービス料金合計　<span id="s-out-service">-</span>
+      </div>
+    </div>
+
+    <div class="stat" style="text-align:left">
+      <div style="font-size:13px;color:var(--accent);font-weight:700;margin-bottom:8px">📦 在庫</div>
+      <div style="display:flex;gap:16px;align-items:baseline">
+        <div><span id="s-stock" style="font-size:22px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 件</span></div>
+        <div><span id="s-stock-amount" style="font-size:18px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 合計金額</span></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
+        対応する受入番号が紐付いていない払出は、在庫の件数・金額に影響しません
+      </div>
+    </div>
+
+    <div class="stat" style="text-align:left">
+      <div style="font-size:12px;color:var(--text2)">総件数（受入＋払出）：<span id="s-total" style="color:var(--text);font-weight:700">-</span></div>
     </div>
   </div>
 
@@ -1287,14 +1316,13 @@ function getServiceMemo() {
   return rows.join('、');
 }
 
-// ===== 統計（在庫 = 受入件数 − 払出件数） =====
+// ===== 統計（在庫 = 紐付けのある払出を除いた受入） =====
 function updateStats() {
   const d = load();
   const inRecs = d.filter(r=>isInKubun(r.kubun));
   const outRecs = d.filter(r=>isOutKubun(r.kubun));
   const ic = inRecs.length;
   const oc = outRecs.length;
-  const sc = Math.max(0, ic - oc);
 
   const inAmount = inRecs.reduce((sum, r) => sum + (parseInt(r.price) || 0), 0);
   // 払出は totalPrice（サービス料金込みの合計）があればそれを使う。なければ price で代替
@@ -1306,11 +1334,23 @@ function updateStats() {
   const outServiceAmount = outRecs.reduce((sum, r) => sum + (parseInt(r.serviceFee) || 0), 0);
   const outBodyAmount = outRecs.reduce((sum, r) => sum + (parseInt(r.price) || 0), 0);
 
+  // ===== 在庫件数・在庫金額 =====
+  // 「対応する受入番号」が紐付いている払出だけを、対応する受入から除外する。
+  // 紐付けのない払出（linkedInIdが空）は、どの受入品が売れたか特定できないため、
+  // 在庫の件数・金額には一切影響させない（在庫が不当に減らないようにする）。
+  const linkedInIds = new Set(
+    outRecs.map(r => r.linkedInId).filter(v => v !== undefined && v !== null && String(v).trim() !== '').map(v => String(v))
+  );
+  const stockRecs = inRecs.filter(r => !linkedInIds.has(String(r.id)));
+  const sc = stockRecs.length;
+  const stockAmount = stockRecs.reduce((sum, r) => sum + (parseInt(r.price) || 0), 0);
+
   document.getElementById('s-in').textContent = ic;
   document.getElementById('s-out').textContent = oc;
   document.getElementById('s-stock').textContent = sc;
   document.getElementById('s-total').textContent = d.length;
   document.getElementById('s-in-amount').textContent = '¥' + inAmount.toLocaleString();
+  document.getElementById('s-stock-amount').textContent = '¥' + stockAmount.toLocaleString();
   document.getElementById('s-out-amount').textContent = '¥' + outAmount.toLocaleString();
   document.getElementById('s-out-service').textContent = '¥' + outServiceAmount.toLocaleString();
   document.getElementById('s-out-body').textContent = '¥' + outBodyAmount.toLocaleString();
