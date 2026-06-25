@@ -221,7 +221,6 @@
     </div>
     <div class="field">
       <label>サービス料金</label>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:6px">※メルカリ・ジモティの手数料ボタンは、先に「合計金額」を入力してから押してください</div>
       <div id="service-quick-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
       <div id="service-rows" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
       <button type="button" class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="addServiceRow()">＋ 項目追加</button>
@@ -238,6 +237,15 @@
       </div>
     </div>
     <input type="hidden" id="out-price">
+
+    <div class="field" style="border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--surface2)">
+      <label>プラットフォーム手数料（売却価格には影響しません・freeeで別途「手数料」として計上）</label>
+      <div id="platform-fee-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0"></div>
+      <input type="text" inputmode="numeric" id="out-platformfee" placeholder="0" oninput="showPlatformFee()">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-top:6px">
+        <span>手数料額</span><span id="disp-platformfee">¥ 0</span>
+      </div>
+    </div>
 
     <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="out-name"></div>
     <div class="field"><label>住所</label><input type="text" id="out-address"></div>
@@ -530,13 +538,17 @@ function submitOut() {
   const totalPrice = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
   const bodyPrice = parseInt(document.getElementById('out-price').value) || 0;
   const serviceFee = Math.max(0, totalPrice - bodyPrice);
+  const platformFee = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
   const serviceMemo = getServiceMemo();
 
   // memoに付帯情報を埋め込み（後で正規表現で抽出できる形式）
+  // ※[手数料:xxx] はプラットフォーム手数料。サービス料金（[作業費:xxx]）とは別物で、
+  //   物品の売却価格（本体金額/price）の計算には一切含めていない。
   const metaTags = [];
   if (linkedInId) metaTags.push('[対応受入:' + linkedInId + ']');
   if (totalPrice) metaTags.push('[合計金額:' + totalPrice + ']');
   if (serviceFee) metaTags.push('[作業費:' + serviceFee + ']');
+  if (platformFee) metaTags.push('[手数料:' + platformFee + ']');
   const fullMemo = [metaTags.join(''), v('out-memo'), serviceMemo].filter(Boolean).join(' ');
 
   const rec = {
@@ -560,7 +572,8 @@ function submitOut() {
     // ローカル表示用（GASには保存されないが、ローカルキャッシュには残す）
     linkedInId: linkedInId,
     totalPrice: totalPrice,
-    serviceFee: serviceFee
+    serviceFee: serviceFee,
+    platformFee: platformFee
   };
 
   if (!rec.date || !rec.category || !v('out-model') || !rec.name) {
@@ -613,16 +626,18 @@ function submitOut() {
 }
 
 // ===== memo内の付帯情報タグを復元 =====
-// submitOutで埋め込んだ [対応受入:5][合計金額:50000][作業費:3000] を解析してフィールドに戻す
+// submitOutで埋め込んだ [対応受入:5][合計金額:50000][作業費:3000][手数料:5000] を解析してフィールドに戻す
 function parseMetaTags(row) {
   if (!row.memo) return;
   if (typeof row.memo !== 'string') row.memo = String(row.memo);
   const m1 = row.memo.match(/\[対応受入:([^\]]+)\]/);
   const m2 = row.memo.match(/\[合計金額:([^\]]+)\]/);
   const m3 = row.memo.match(/\[作業費:([^\]]+)\]/);
+  const m4 = row.memo.match(/\[手数料:([^\]]+)\]/);
   if (m1) row.linkedInId = m1[1];
   if (m2) row.totalPrice = parseInt(m2[1]) || 0;
   if (m3) row.serviceFee = parseInt(m3[1]) || 0;
+  if (m4) row.platformFee = parseInt(m4[1]) || 0;
 }
 
 // ===== ローカル全件をGASへ一括アップロード（上書き、バッチ分割） =====
@@ -987,17 +1002,19 @@ function editEntry() {
       }
     }
     calcOutPrice();
+    document.getElementById('out-platformfee').value = d.platformFee || '';
+    showPlatformFee();
     document.getElementById('out-age2').value = d.age || '';
     document.getElementById('out-idMethod').value = d.idMethod || '';
     document.getElementById('out-idNo').value = d.idNo || '';
     document.getElementById('out-name').value = d.name || '';
     document.getElementById('out-address').value = d.address || '';
     document.getElementById('out-job').value = d.job || '';
-    // memoに埋め込まれた付帯タグ（対応受入・合計金額・作業費）を取り除いた残りを表示
+    // memoに埋め込まれた付帯タグ（対応受入・合計金額・作業費・手数料）を取り除いた残りを表示
     // ※個別の作業項目（品目名ごとの内訳）はタグ化されておらず備考に文字として混在しているため、
     //   service-rowsへの個別復元はできない（このアプリのデータ構造上、確認できません）。
     let memo = d.memo || '';
-    memo = memo.replace(/\[対応受入:[^\]]+\]/, '').replace(/\[合計金額:[^\]]+\]/, '').replace(/\[作業費:[^\]]+\]/, '').trim();
+    memo = memo.replace(/\[対応受入:[^\]]+\]/, '').replace(/\[合計金額:[^\]]+\]/, '').replace(/\[作業費:[^\]]+\]/, '').replace(/\[手数料:[^\]]+\]/, '').trim();
     document.getElementById('out-memo').value = memo;
     document.querySelector('#t-out .btn-primary').textContent = '更新を保存（編集中：払出-' + d.id + '）';
   }
@@ -1115,6 +1132,7 @@ document.addEventListener('DOMContentLoaded', function() {
   updateHeaderCount();
   buildPartnerButtons();
   buildServiceQuickButtons();
+  buildPlatformFeeButtons();
 });
 
 // ===== フォームクリア =====
@@ -1137,6 +1155,9 @@ function clearOut() {
   document.getElementById('out-date').value = todayISO();
   document.getElementById('service-rows').innerHTML = '';
   serviceRowCount = 0;
+  const feeEl = document.getElementById('out-platformfee');
+  if (feeEl) feeEl.value = '';
+  showPlatformFee();
   calcOutPrice();
   if (editMode === 'out') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); updateLinkedSelect(); }
   else { renderLinkedOptions(); }
@@ -1178,30 +1199,42 @@ const SERVICE_PRESETS = [
 ];
 
 // 販売プラットフォームの手数料（合計金額に対する割合）
-// ボタンを押した時点の「合計金額」から自動で手数料額を計算し、サービス料金行として追加する。
+// ※サービス料金（整備代等）とは別枠。物品の売却価格（本体金額）には一切影響させず、
+//   freee側で「支出・手数料」として別計上するための金額として保持するのみ。
 const PLATFORM_FEE_PRESETS = [
-  { label: 'メルカリ手数料(10%)', rate: 0.10 },
+  { label: 'メルカリ(10%)', rate: 0.10 },
   { label: 'ジモティあんしん決済(5%)', rate: 0.05 }
 ];
 
-function addPlatformFeeRow(idx) {
+function buildPlatformFeeButtons() {
+  const c = document.getElementById('platform-fee-btns');
+  if (!c) return;
+  c.innerHTML = PLATFORM_FEE_PRESETS.map((p, i) =>
+    `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="applyPlatformFee(${i})">＋ ${p.label}</button>`
+  ).join('');
+}
+
+function applyPlatformFee(idx) {
   const p = PLATFORM_FEE_PRESETS[idx];
   if (!p) return;
   const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
   const fee = Math.round(total * p.rate);
-  addServiceRow(p.label, fee);
+  document.getElementById('out-platformfee').value = fee;
+  showPlatformFee();
+}
+
+function showPlatformFee() {
+  const val = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
+  const el = document.getElementById('disp-platformfee');
+  if (el) el.textContent = '¥ ' + val.toLocaleString();
 }
 
 function buildServiceQuickButtons() {
   const c = document.getElementById('service-quick-btns');
   if (!c) return;
-  const serviceBtns = SERVICE_PRESETS.map((p, i) =>
+  c.innerHTML = SERVICE_PRESETS.map((p, i) =>
     `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="addServiceRow('${p.label}', ${p.amount})">＋ ${p.label}（¥${p.amount.toLocaleString()}）</button>`
   ).join('');
-  const platformBtns = PLATFORM_FEE_PRESETS.map((p, i) =>
-    `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px;border-color:var(--accent);color:var(--accent)" onclick="addPlatformFeeRow(${i})">＋ ${p.label}</button>`
-  ).join('');
-  c.innerHTML = serviceBtns + platformBtns;
 }
 
 function addServiceRow(presetLabel, presetAmount) {
@@ -1619,7 +1652,7 @@ function exportCSV(type) {
   if (type==='受入') data = data.filter(d=>isInKubun(d.kubun));
   else if (type==='払出') data = data.filter(d=>isOutKubun(d.kubun));
   if (!data.length) { toast('データなし','err'); return; }
-  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee'];
+  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee','platformFee'];
   const csv = [keys.join(','), ...data.map(d=>keys.map(k=>'"'+String(d[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
