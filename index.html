@@ -221,6 +221,7 @@
     </div>
     <div class="field">
       <label>サービス料金</label>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px">※メルカリ・ジモティの手数料ボタンは、先に「合計金額」を入力してから押してください</div>
       <div id="service-quick-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
       <div id="service-rows" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
       <button type="button" class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="addServiceRow()">＋ 項目追加</button>
@@ -1176,12 +1177,31 @@ const SERVICE_PRESETS = [
   { label: 'タイヤ交換', amount: 2000 }
 ];
 
+// 販売プラットフォームの手数料（合計金額に対する割合）
+// ボタンを押した時点の「合計金額」から自動で手数料額を計算し、サービス料金行として追加する。
+const PLATFORM_FEE_PRESETS = [
+  { label: 'メルカリ手数料(10%)', rate: 0.10 },
+  { label: 'ジモティあんしん決済(5%)', rate: 0.05 }
+];
+
+function addPlatformFeeRow(idx) {
+  const p = PLATFORM_FEE_PRESETS[idx];
+  if (!p) return;
+  const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
+  const fee = Math.round(total * p.rate);
+  addServiceRow(p.label, fee);
+}
+
 function buildServiceQuickButtons() {
   const c = document.getElementById('service-quick-btns');
   if (!c) return;
-  c.innerHTML = SERVICE_PRESETS.map((p, i) =>
+  const serviceBtns = SERVICE_PRESETS.map((p, i) =>
     `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="addServiceRow('${p.label}', ${p.amount})">＋ ${p.label}（¥${p.amount.toLocaleString()}）</button>`
   ).join('');
+  const platformBtns = PLATFORM_FEE_PRESETS.map((p, i) =>
+    `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px;border-color:var(--accent);color:var(--accent)" onclick="addPlatformFeeRow(${i})">＋ ${p.label}</button>`
+  ).join('');
+  c.innerHTML = serviceBtns + platformBtns;
 }
 
 function addServiceRow(presetLabel, presetAmount) {
