@@ -498,8 +498,8 @@ function tab(id, btn) {
 }
 
 // ===== 受入保存 =====
-// 実際のGASスキーマ: uid,id,date,kubun,category,qty,feature,price,age,idMethod,idNo,name,address,job,memo,createdAt,sold
-// inId / soldEntryId / linkedInId / totalPrice / serviceFee はGAS側に列がないため保存されない
+// 実際のGASスキーマ(FIELDS): uid,id,date,kubun,category,qty,feature,price,age,idMethod,idNo,name,address,job,memo,sold,createdAt,linkedInId,totalPrice,serviceFee
+// （platformFeeのみGAS側に列がないため保存されず、memo内の[手数料:xxx]タグとしてのみ記録される）
 function submitIn() {
   const isEditing = editMode === 'in';
   const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
@@ -534,12 +534,19 @@ function submitIn() {
     const all = load();
     const idx = all.findIndex(r => String(r.uid) === String(editUID));
     if (idx < 0) { toast('編集対象が見つかりません', 'err'); return; }
-    all[idx] = rec;
-    save(all);
-    updateNextIds(); updateHeaderCount();
-    toast('受入 ' + nextIn + ' を更新しました（ローカルのみ。GASへ反映するには設定タブの「ローカル全件をGASに上書き送信」を実行してください）', 'ok');
-    editMode = null; editUID = null;
-    clearIn();
+
+    gasPost(rec, function(res) {
+      if (res.status === 'ok') {
+        all[idx] = rec;
+        save(all);
+        updateNextIds(); updateHeaderCount();
+        toast('受入 ' + nextIn + ' を更新しました', 'ok');
+        editMode = null; editUID = null;
+        clearIn();
+      } else {
+        toast('GASへの反映に失敗しました（ローカルは未変更）: ' + (res.message||'不明'), 'err');
+      }
+    });
     return;
   }
 
@@ -598,7 +605,7 @@ function submitOut() {
     memo: fullMemo,
     sold: (isEditing && existing) ? existing.sold : false,
     createdAt: (isEditing && existing) ? existing.createdAt : new Date().toISOString(),
-    // ローカル表示用（GASには保存されないが、ローカルキャッシュには残す）
+    // GAS側にも同名の列があるため保存される（platformFeeのみ列がなくmemoタグのみ）
     linkedInId: linkedInId,
     totalPrice: totalPrice,
     serviceFee: serviceFee,
@@ -615,23 +622,49 @@ function submitOut() {
     const idx = all.findIndex(r => String(r.uid) === String(editUID));
     if (idx < 0) { toast('編集対象が見つかりません', 'err'); return; }
 
-    // 紐付け先が変わった場合、旧・新の受入レコードの売済フラグを調整（ローカルのみ）
-    const oldLinked = existing.linkedInId;
-    if (oldLinked && String(oldLinked) !== String(linkedInId)) {
-      const oi = all.findIndex(r => String(r.id) === String(oldLinked) && isInKubun(r.kubun));
-      if (oi >= 0) all[oi].sold = false;
-    }
-    if (linkedInId) {
-      const ni = all.findIndex(r => String(r.id) === String(linkedInId) && isInKubun(r.kubun));
-      if (ni >= 0) all[ni].sold = true;
-    }
+    gasPost(rec, function(res) {
+      if (res.status !== 'ok') {
+        toast('GASへの反映に失敗しました（ローカルは未変更）: ' + (res.message||'不明'), 'err');
+        return;
+      }
 
-    all[idx] = rec;
-    save(all);
-    updateNextIds(); updateHeaderCount();
-    toast('払出 ' + nextOut + ' を更新しました（ローカルのみ。GASへ反映するには設定タブの「ローカル全件をGASに上書き送信」を実行してください）', 'ok');
-    editMode = null; editUID = null;
-    clearOut();
+      // 紐付け先が変わった場合、旧・新の受入レコードの売済フラグを調整し、GASにも反映する
+      const oldLinked = existing.linkedInId;
+      let oldInRec = null, newInRec = null;
+      if (oldLinked && String(oldLinked) !== String(linkedInId)) {
+        const oi = all.findIndex(r => String(r.id) === String(oldLinked) && isInKubun(r.kubun));
+        if (oi >= 0) { all[oi].sold = false; oldInRec = all[oi]; }
+      }
+      if (linkedInId) {
+        const ni = all.findIndex(r => String(r.id) === String(linkedInId) && isInKubun(r.kubun));
+        if (ni >= 0) { all[ni].sold = true; newInRec = all[ni]; }
+      }
+
+      function finishOutEdit() {
+        all[idx] = rec;
+        save(all);
+        updateNextIds(); updateHeaderCount();
+        toast('払出 ' + nextOut + ' を更新しました', 'ok');
+        editMode = null; editUID = null;
+        clearOut();
+      }
+
+      const inUpdates = [oldInRec, newInRec].filter(Boolean);
+      if (!inUpdates.length) { finishOutEdit(); return; }
+
+      let remaining = inUpdates.length;
+      let hadError = false;
+      inUpdates.forEach(function(inRec) {
+        gasPost(inRec, function(inRes) {
+          if (inRes.status !== 'ok') hadError = true;
+          remaining--;
+          if (remaining === 0) {
+            if (hadError) toast('払出は更新しましたが、受入の売済フラグのGAS反映に失敗しました', 'err');
+            finishOutEdit();
+          }
+        });
+      });
+    });
     return;
   }
 
@@ -639,15 +672,28 @@ function submitOut() {
     if (res.status === 'ok') {
       const all = load();
       all.push(rec);
-      // 受入に売済マーク（ローカルのみ。GASには sold 列はあるが更新APIがないため更新しない）
+      // 受入に売済マーク。ローカル更新後、GAS側にも同じレコードをsave送信して反映する
+      let inRec = null;
       if (linkedInId) {
         const idx = all.findIndex(r => String(r.id) === String(linkedInId) && isInKubun(r.kubun));
-        if (idx >= 0) { all[idx].sold = true; }
+        if (idx >= 0) { all[idx].sold = true; inRec = all[idx]; }
       }
       save(all);
       updateNextIds(); updateHeaderCount();
-      toast('払出 ' + nextOut + ' を保存しました', 'ok');
-      clearOut();
+
+      function finish() {
+        toast('払出 ' + nextOut + ' を保存しました', 'ok');
+        clearOut();
+      }
+
+      if (inRec) {
+        gasPost(inRec, function(inRes) {
+          if (inRes.status !== 'ok') toast('払出は保存しましたが、受入の売済フラグのGAS反映に失敗しました', 'err');
+          finish();
+        });
+      } else {
+        finish();
+      }
     } else {
       toast('エラー: ' + (res.message||'不明'), 'err');
     }
@@ -961,8 +1007,8 @@ function closeModal(e) {
 }
 
 // ===== 既存レコードの編集 =====
-// GAS側に「1件だけ更新するAPI」は存在しない（save=追加専用、saveAllStart/saveAllAppend=全件上書き専用）ため、
-// 編集はローカルのみを書き換える。GASに反映するには設定タブの「ローカル全件をGASに上書き送信」を使う。
+// GAS側のaction=saveはuidが既存なら上書き、なければ追加するupsert仕様のため、
+// 編集フォーム送信時（submitIn/submitOut）にgasPost()でGASへも即時反映する。
 function editEntry() {
   if (!currentUID) return;
   const d = load().find(r => String(r.uid) === String(currentUID));
@@ -1047,7 +1093,7 @@ function editEntry() {
     document.getElementById('out-memo').value = memo;
     document.querySelector('#t-out .btn-primary').textContent = '更新を保存（編集中：払出-' + d.id + '）';
   }
-  toast('編集モードにしました。保存すると上書きされます（GASへは反映されません）', 'ok');
+  toast('編集モードにしました。保存するとGASにも反映されます', 'ok');
 }
 
 function deleteEntry() {
