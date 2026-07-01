@@ -354,6 +354,28 @@
   </div>
 
   <div class="card">
+    <h2>プラットフォーム振込（払出）記録</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">メルカリ・ジモティ等のウォレット残高がまとまって銀行口座に振り込まれた際の記録です。振込時にかかる手数料も一緒に記録し、freeeへの入力漏れを防ぎます。</p>
+    <div class="field"><label>振込日 *</label><input type="date" id="payout-date"></div>
+    <div class="field">
+      <label>プラットフォーム *</label>
+      <div id="payout-platform-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+      <input type="text" id="payout-platform" placeholder="例：メルカリ">
+    </div>
+    <div class="field"><label>振込金額（円）※手数料を引かれた後の入金額 *</label><input type="text" inputmode="numeric" id="payout-amount" placeholder="0"></div>
+    <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="payout-fee" placeholder="0"></div>
+    <div class="field"><label>備考</label><input type="text" id="payout-memo" placeholder="任意"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="submitPayout()">記録を保存</button>
+      <button class="btn btn-secondary" onclick="clearPayout()">クリア</button>
+    </div>
+    <div id="payout-list" style="margin-top:14px;display:flex;flex-direction:column;gap:8px"></div>
+    <div class="btn-group" style="margin-top:10px">
+      <button class="btn btn-secondary" onclick="exportPayoutCSV()">振込記録CSV出力</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>CSVエクスポート</h2>
     <div class="btn-group">
       <button class="btn btn-secondary" onclick="exportCSV('受入')">受入CSV</button>
@@ -1208,6 +1230,9 @@ document.addEventListener('DOMContentLoaded', function() {
   buildPartnerButtons();
   buildServiceQuickButtons();
   buildPlatformFeeButtons();
+  buildPayoutPlatformButtons();
+  document.getElementById('payout-date').value = todayISO();
+  renderPayoutList();
 });
 
 // ===== フォームクリア =====
@@ -1732,6 +1757,85 @@ function importBackupJSON(input) {
     input.value = '';
   };
   reader.readAsText(file);
+}
+
+// ===== プラットフォーム振込（払出）記録 =====
+// ウォレットにまとまった売上金を銀行に振込申請した際の、振込日・振込金額・手数料を記録する。
+// 台帳の受入・払出データとは別物のため、GASへは送らずローカル保存＋CSV出力のみで管理する。
+const PAYOUT_LS = 'kobutu_payouts_v1';
+const PAYOUT_PLATFORM_PRESETS = ['メルカリ', 'ジモティ'];
+
+function loadPayouts() { try { return JSON.parse(localStorage.getItem(PAYOUT_LS) || '[]'); } catch(e) { return []; } }
+function savePayouts(d) { localStorage.setItem(PAYOUT_LS, JSON.stringify(d)); }
+
+function buildPayoutPlatformButtons() {
+  const c = document.getElementById('payout-platform-btns');
+  if (!c) return;
+  c.innerHTML = PAYOUT_PLATFORM_PRESETS.map(p =>
+    `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="document.getElementById('payout-platform').value='${p}'">${p}</button>`
+  ).join('');
+}
+
+function submitPayout() {
+  const date = v('payout-date');
+  const platform = v('payout-platform');
+  const amount = parseInt((document.getElementById('payout-amount')?.value||'').replace(/,/g,'')) || 0;
+  const fee = parseInt((document.getElementById('payout-fee')?.value||'').replace(/,/g,'')) || 0;
+  const memo = v('payout-memo');
+
+  if (!date || !platform || !amount) {
+    toast('振込日・プラットフォーム・振込金額を入力してください', 'err'); return;
+  }
+
+  const rec = { uid: uid(), date, platform, amount, fee, memo, createdAt: new Date().toISOString() };
+  const all = loadPayouts();
+  all.push(rec);
+  savePayouts(all);
+  toast('振込記録を保存しました', 'ok');
+  clearPayout();
+  renderPayoutList();
+}
+
+function clearPayout() {
+  ['payout-date','payout-platform','payout-amount','payout-fee','payout-memo'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('payout-date').value = todayISO();
+}
+
+function deletePayout(uidVal) {
+  if (!confirm('この振込記録を削除します。よろしいですか？')) return;
+  const all = loadPayouts().filter(r => String(r.uid) !== String(uidVal));
+  savePayouts(all);
+  renderPayoutList();
+}
+
+function renderPayoutList() {
+  const wrap = document.getElementById('payout-list');
+  if (!wrap) return;
+  const all = loadPayouts().sort((a,b) => (a.date < b.date ? 1 : -1));
+  if (!all.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">記録はまだありません</p>'; return; }
+  wrap.innerHTML = all.map(r => `
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px">
+      <div>
+        <div><b>${r.date}</b>　${r.platform}　振込額 ¥${(r.amount||0).toLocaleString()}　手数料 ¥${(r.fee||0).toLocaleString()}</div>
+        ${r.memo ? `<div style="color:var(--text2);margin-top:2px">${r.memo}</div>` : ''}
+      </div>
+      <button class="btn btn-danger" style="font-size:11px;padding:4px 8px;flex-shrink:0" onclick="deletePayout('${r.uid}')">削除</button>
+    </div>
+  `).join('');
+}
+
+function exportPayoutCSV() {
+  const data = loadPayouts();
+  if (!data.length) { toast('振込記録がありません', 'err'); return; }
+  const keys = ['date','platform','amount','fee','memo'];
+  const header = ['振込日','プラットフォーム','振込金額','振込手数料','備考'];
+  const csv = [header.join(','), ...data.map(d => keys.map(k => '"'+String(d[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download = '振込記録_'+todayISO().replace(/-/g,'')+'.csv';
+  a.click();
 }
 
 // ===== CSV =====
