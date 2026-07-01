@@ -371,7 +371,8 @@
     </div>
     <div id="payout-list" style="margin-top:14px;display:flex;flex-direction:column;gap:8px"></div>
     <div class="btn-group" style="margin-top:10px">
-      <button class="btn btn-secondary" onclick="exportPayoutCSV()">振込記録CSV出力</button>
+      <button class="btn btn-secondary" onclick="exportPayoutCSV()">振込記録CSV出力（バックアップ用）</button>
+      <button class="btn btn-primary" onclick="exportPayoutFreeeCSV()">振込手数料 freee用CSV出力</button>
     </div>
   </div>
 
@@ -1826,8 +1827,43 @@ function renderPayoutList() {
   `).join('');
 }
 
+function exportPayoutFreeeCSV() {
+  const data = loadPayouts().filter(r => parseInt(r.fee) > 0);
+  if (!data.length) { toast('手数料が登録された振込記録がありません', 'err'); return; }
+
+  // freee取引インポートCSVの列（freeeの「取引のインポート」画面から取り込める形式）
+  // 発生日・決済日はともに振込日を使う（振込が完了した日＝お金が動いた日）
+  const header = ['発生日','収支区分','勘定科目','税区分','金額','取引先','取引内容','備考','決済日'];
+  const rows = data.map(r => {
+    const date = r.date || '';
+    const platform = r.platform || '';
+    const fee = parseInt(r.fee) || 0;
+    const memo = r.memo ? '振込手数料（' + platform + '）' + ' ' + r.memo : '振込手数料（' + platform + '）';
+    return [
+      date,          // 発生日
+      '支出',        // 収支区分
+      '支払手数料',  // 勘定科目
+      '課対仕入10%', // 税区分
+      fee,           // 金額
+      platform,      // 取引先
+      '振込手数料',  // 取引内容
+      memo,          // 備考
+      date           // 決済日（振込当日に確定するため発生日と同じ）
+    ];
+  });
+
+  const csv = [header, ...rows].map(row =>
+    row.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')
+  ).join('\r\n');
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = '振込手数料_freee用_' + todayISO().replace(/-/g, '') + '.csv';
+  a.click();
+  toast('freee用CSVを出力しました', 'ok');
+}
+
 function exportPayoutCSV() {
-  const data = loadPayouts();
   if (!data.length) { toast('振込記録がありません', 'err'); return; }
   const keys = ['date','platform','amount','fee','memo'];
   const header = ['振込日','プラットフォーム','振込金額','振込手数料','備考'];
