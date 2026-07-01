@@ -111,6 +111,8 @@
 
   ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--border); }
 </style>
+<!-- SheetJS: ブラウザ上でxlsxファイルを生成するためのライブラリ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -1831,36 +1833,24 @@ function exportPayoutFreeeCSV() {
   const data = loadPayouts().filter(r => parseInt(r.fee) > 0);
   if (!data.length) { toast('手数料が登録された振込記録がありません', 'err'); return; }
 
-  // freee取引インポートCSVの列（freeeの「取引のインポート」画面から取り込める形式）
-  // 発生日・決済日はともに振込日を使う（振込が完了した日＝お金が動いた日）
+  // freeeのエクセルインポート（支出取引データ）の列形式
   const header = ['発生日','収支区分','勘定科目','税区分','金額','取引先','取引内容','備考','決済日'];
   const rows = data.map(r => {
     const date = r.date || '';
     const platform = r.platform || '';
     const fee = parseInt(r.fee) || 0;
-    const memo = r.memo ? '振込手数料（' + platform + '）' + ' ' + r.memo : '振込手数料（' + platform + '）';
-    return [
-      date,          // 発生日
-      '支出',        // 収支区分
-      '支払手数料',  // 勘定科目
-      '課対仕入10%', // 税区分
-      fee,           // 金額
-      platform,      // 取引先
-      '振込手数料',  // 取引内容
-      memo,          // 備考
-      date           // 決済日（振込当日に確定するため発生日と同じ）
-    ];
+    const memo = '振込手数料（' + platform + '）' + (r.memo ? ' ' + r.memo : '');
+    return [date, '支出', '支払手数料', '課対仕入10%', fee, platform, '振込手数料', memo, date];
   });
 
-  const csv = [header, ...rows].map(row =>
-    row.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')
-  ).join('\r\n');
-
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = '振込手数料_freee用_' + todayISO().replace(/-/g, '') + '.csv';
-  a.click();
-  toast('freee用CSVを出力しました', 'ok');
+  // SheetJSでxlsx生成
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  // 列幅を設定
+  ws['!cols'] = [12,10,14,14,10,14,12,30,12].map(w => ({wch: w}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '振込手数料');
+  XLSX.writeFile(wb, '振込手数料_freee用_' + todayISO().replace(/-/g,'') + '.xlsx');
+  toast('freee用xlsxを出力しました', 'ok');
 }
 
 function exportPayoutCSV() {
