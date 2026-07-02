@@ -157,7 +157,6 @@
     <div class="field"><label>車名・品名 *</label><input type="text" id="in-model" placeholder="例：スーパーカブ110"></div>
     <div class="field"><label>車台番号（フレームNo）</label><input type="text" id="in-frame" placeholder="例：JA44-1002305"></div>
     <div class="row2">
-      <div class="field"><label>年式</label><input type="text" inputmode="numeric" id="in-age" placeholder="例：2020"></div>
       <div class="field"><label>数量</label><input type="text" inputmode="numeric" id="in-qty" value="1"></div>
     </div>
     <div class="field">
@@ -207,7 +206,7 @@
     <div class="field"><label>取引年月日 *</label><input type="date" id="out-date"></div>
     <div class="field">
       <label>対応する受入番号（在庫から選択）</label>
-      <input type="text" id="out-linked-search" placeholder="車台番号・車名・メーカー・年式・受入番号で絞り込み" oninput="renderLinkedOptions()" style="margin-bottom:6px">
+      <input type="text" id="out-linked-search" placeholder="車台番号・車名・メーカー・受入番号で絞り込み" oninput="renderLinkedOptions()" style="margin-bottom:6px">
       <select id="out-linked"><option value="">（紐付けなし）</option></select>
       <div id="out-linked-count" style="font-size:11px;color:var(--text2);margin-top:3px"></div>
     </div>
@@ -223,7 +222,6 @@
     <div class="field"><label>車名・品名 *</label><input type="text" id="out-model"></div>
     <div class="field"><label>車台番号</label><input type="text" id="out-frame"></div>
     <div class="row2">
-      <div class="field"><label>年式</label><input type="text" inputmode="numeric" id="out-age"></div>
       <div class="field"><label>数量</label><input type="text" inputmode="numeric" id="out-qty" value="1"></div>
     </div>
     <div class="field">
@@ -376,6 +374,36 @@
       <button class="btn btn-secondary" onclick="exportPayoutCSV()">振込記録CSV出力（バックアップ用）</button>
       <button class="btn btn-primary" onclick="exportPayoutFreeeCSV()">振込手数料 freee用CSV出力</button>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>CSV①　売上登録用（売れるごと）</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">払出（売却）データから、1台ごとに「未収入金／売上高」「支払手数料／未収入金」の仕訳（振替伝票）を出力します。freeeの［取引入力］→［振替伝票］→［インポート］→［他社会計ソフトインポート］で取り込んでください。</p>
+    <div class="row2">
+      <div class="field"><label>期間（開始・任意）</label><input type="date" id="sales-from"></div>
+      <div class="field"><label>期間（終了・任意）</label><input type="date" id="sales-to"></div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="previewSalesJournal()">対象データを確認</button>
+      <button class="btn btn-primary" onclick="exportSalesJournalCSV()">CSV①　売上登録用を出力</button>
+    </div>
+    <div id="sales-journal-preview" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <h2>CSV②　出金登録用（メルカリ等から銀行へ振り込まれた日にだけ作成）</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">古物台帳には「出金日」の概念がないため、下のチェックリストで「今回の振込に含まれる売却案件」を選び、出金日・銀行入金額・振込手数料を入力してください。選んだ案件は「出金済」としてマークされ、次回以降このリストから外れます。</p>
+    <div id="payout-pending-list" style="margin-bottom:12px"></div>
+    <div class="row2">
+      <div class="field"><label>出金日 *</label><input type="date" id="pd-date"></div>
+      <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="pd-fee" placeholder="0" oninput="updatePayoutDiff()"></div>
+    </div>
+    <div class="field"><label>銀行入金額（円） *</label><input type="text" inputmode="numeric" id="pd-bank" placeholder="0" oninput="updatePayoutDiff()"></div>
+    <div id="payout-diff-check" style="font-size:12px;margin-bottom:8px"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="exportPayoutJournalCSV()">CSV②を出力して出金済にする</button>
+    </div>
+    <div id="payout-journal-result" style="margin-top:10px"></div>
   </div>
 
   <div class="card">
@@ -605,11 +633,17 @@ function submitOut() {
   // memoに付帯情報を埋め込み（後で正規表現で抽出できる形式）
   // ※[手数料:xxx] はプラットフォーム手数料。サービス料金（[作業費:xxx]）とは別物で、
   //   物品の売却価格（本体金額/price）の計算には一切含めていない。
+  // 出金済・出金日は本フォームには入力欄がないため、編集時は既存の値をそのまま引き継ぐ
+  const payoutDone = (isEditing && existing) ? !!existing.payoutDone : false;
+  const payoutDate = (isEditing && existing) ? (existing.payoutDate || '') : '';
+
   const metaTags = [];
   if (linkedInId) metaTags.push('[対応受入:' + linkedInId + ']');
   if (totalPrice) metaTags.push('[合計金額:' + totalPrice + ']');
   if (serviceFee) metaTags.push('[作業費:' + serviceFee + ']');
   if (platformFee) metaTags.push('[手数料:' + platformFee + ']');
+  if (payoutDone) metaTags.push('[出金済:1]');
+  if (payoutDate) metaTags.push('[出金日:' + payoutDate + ']');
   const fullMemo = [metaTags.join(''), v('out-memo'), serviceMemo].filter(Boolean).join(' ');
 
   const rec = {
@@ -630,11 +664,13 @@ function submitOut() {
     memo: fullMemo,
     sold: (isEditing && existing) ? existing.sold : false,
     createdAt: (isEditing && existing) ? existing.createdAt : new Date().toISOString(),
-    // GAS側にも同名の列があるため保存される（platformFeeのみ列がなくmemoタグのみ）
+    // GAS側にも同名の列があるため保存される（platformFee/payoutDone/payoutDateは列がなくmemoタグのみ）
     linkedInId: linkedInId,
     totalPrice: totalPrice,
     serviceFee: serviceFee,
-    platformFee: platformFee
+    platformFee: platformFee,
+    payoutDone: payoutDone,
+    payoutDate: payoutDate
   };
 
   if (!rec.date || !rec.category || !v('out-model') || !rec.name) {
@@ -734,10 +770,14 @@ function parseMetaTags(row) {
   const m2 = row.memo.match(/\[合計金額:([^\]]+)\]/);
   const m3 = row.memo.match(/\[作業費:([^\]]+)\]/);
   const m4 = row.memo.match(/\[手数料:([^\]]+)\]/);
+  const m5 = row.memo.match(/\[出金日:([^\]]+)\]/);
+  const m6 = row.memo.match(/\[出金済:([^\]]+)\]/);
   if (m1) row.linkedInId = m1[1];
   if (m2) row.totalPrice = parseInt(m2[1]) || 0;
   if (m3) row.serviceFee = parseInt(m3[1]) || 0;
   if (m4) row.platformFee = parseInt(m4[1]) || 0;
+  if (m5) row.payoutDate = m5[1];
+  row.payoutDone = !!(m6 && m6[1] === '1');
 }
 
 // ===== ローカル全件をGASへ一括アップロード（上書き、バッチ分割） =====
@@ -975,7 +1015,7 @@ function renderList() {
     const soldFlag = isIn && allData.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(entryId));
     return `<div class="entry ${isIn?'in':'out'}" onclick="showDetail('${d.uid}')">
       <div class="e-top">
-        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}</span>
+        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}${(!isIn && d.payoutDone)?'<span class="sold-tag">出金済</span>':''}</span>
         <span class="e-date">${d.date||''}</span>
       </div>
       <div class="e-cat">${d.category||''}</div>
@@ -1004,7 +1044,6 @@ function showDetail(u) {
     ['メーカー', f.maker],
     ['車名・品名', f.model],
     ['車台番号', f.frame],
-    ['年式', d.age],
     ['数量', d.qty],
     ['価格', (() => { const amt = displayPrice(d); return amt ? '¥' + Number(amt).toLocaleString() : ''; })()],
     ['相手方', d.name],
@@ -1050,7 +1089,6 @@ function editEntry() {
     document.getElementById('in-maker').value = f.maker || '';
     document.getElementById('in-model').value = f.model || '';
     document.getElementById('in-frame').value = f.frame || '';
-    document.getElementById('in-age').value = d.age || '';
     document.getElementById('in-qty').value = d.qty || '1';
     document.getElementById('in-price').value = d.price || '';
     showInPrice();
@@ -1072,9 +1110,9 @@ function editEntry() {
       const inRec = load().find(r => String(r.id) === String(d.linkedInId) && isInKubun(r.kubun));
       if (inRec) {
         const f2 = parseFeature(inRec.feature);
-        stockCache.push({ id: d.linkedInId, maker: f2.maker || '', model: f2.model || '', frame: f2.frame || '', age: inRec.age || '', category: inRec.category || '', editing: true });
+        stockCache.push({ id: d.linkedInId, maker: f2.maker || '', model: f2.model || '', frame: f2.frame || '', category: inRec.category || '', editing: true });
       } else {
-        stockCache.push({ id: d.linkedInId, maker: '（編集中・対応する受入データが見つかりません）', model: '', frame: '', age: '', category: '', editing: true });
+        stockCache.push({ id: d.linkedInId, maker: '（編集中・対応する受入データが見つかりません）', model: '', frame: '', category: '', editing: true });
       }
       renderLinkedOptions();
     }
@@ -1084,7 +1122,6 @@ function editEntry() {
     document.getElementById('out-maker').value = f.maker || '';
     document.getElementById('out-model').value = f.model || '';
     document.getElementById('out-frame').value = f.frame || '';
-    document.getElementById('out-age').value = d.age || '';
     document.getElementById('out-qty').value = d.qty || '1';
     document.getElementById('out-total').value = d.totalPrice || d.price || '';
     document.getElementById('service-rows').innerHTML = '';
@@ -1146,7 +1183,7 @@ function updateLinkedSelect() {
     .filter(d => isInKubun(d.kubun) && !all.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id)))
     .map(d => {
       const f = parseFeature(d.feature);
-      return { id: d.id, maker: f.maker || '', model: f.model || '', frame: f.frame || '', age: d.age || '', category: d.category || '' };
+      return { id: d.id, maker: f.maker || '', model: f.model || '', frame: f.frame || '', category: d.category || '' };
     });
   const searchEl = document.getElementById('out-linked-search');
   if (searchEl) searchEl.value = '';
@@ -1159,14 +1196,14 @@ function renderLinkedOptions() {
   const kw = (document.getElementById('out-linked-search')?.value || '').trim().toLowerCase();
 
   const filtered = !kw ? stockCache : stockCache.filter(d => {
-    const hay = [d.id, d.maker, d.model, d.frame, d.age, d.category].join(' ').toLowerCase();
+    const hay = [d.id, d.maker, d.model, d.frame, d.category].join(' ').toLowerCase();
     return hay.includes(kw);
   });
 
   sel.innerHTML = '<option value="">（紐付けなし）</option>' +
     filtered.map(d => {
       const label = [d.maker, d.model].filter(Boolean).join(' ');
-      const sub = [d.frame, d.age ? d.age + '年' : ''].filter(Boolean).join(' / ');
+      const sub = [d.frame].filter(Boolean).join(' / ');
       const tail = (sub ? '（' + sub + '）' : '') + (d.editing ? '（編集中）' : '');
       return `<option value="${d.id}">${d.id} — ${label}${tail}</option>`;
     }).join('');
@@ -1225,7 +1262,6 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('out-maker').value = f.maker;
     document.getElementById('out-model').value = f.model;
     document.getElementById('out-frame').value = f.frame;
-    document.getElementById('out-age').value = rec.age || '';
   });
   setToday();
   updateNextIds();
@@ -1236,13 +1272,15 @@ document.addEventListener('DOMContentLoaded', function() {
   buildPayoutPlatformButtons();
   document.getElementById('payout-date').value = todayISO();
   renderPayoutList();
+  document.getElementById('pd-date').value = todayISO();
+  renderPayoutPendingList();
 });
 
 // ===== フォームクリア =====
 function v(id) { return (document.getElementById(id)?.value||'').trim(); }
 
 function clearIn() {
-  ['in-category','in-maker','in-model','in-frame','in-age','in-price','in-age2','in-idMethod','in-idNo','in-name','in-address','in-job','in-memo']
+  ['in-category','in-maker','in-model','in-frame','in-price','in-age2','in-idMethod','in-idNo','in-name','in-address','in-job','in-memo']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('in-qty').value='1';
   document.getElementById('in-date').value = todayISO();
@@ -1252,7 +1290,7 @@ function clearIn() {
 }
 
 function clearOut() {
-  ['out-linked','out-linked-search','out-category','out-maker','out-model','out-frame','out-age','out-total','out-price','out-age2','out-idMethod','out-idNo','out-name','out-address','out-job','out-memo']
+  ['out-linked','out-linked-search','out-category','out-maker','out-model','out-frame','out-total','out-price','out-age2','out-idMethod','out-idNo','out-name','out-address','out-job','out-memo']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('out-qty').value='1';
   document.getElementById('out-date').value = todayISO();
@@ -1864,13 +1902,235 @@ function exportPayoutCSV() {
   a.click();
 }
 
+// ===== 未収入金運用：CSV①（売上登録用）／CSV②（出金登録用） =====
+// 古物台帳には「出金日」の概念がないため、払出（売却）レコードのmemoに
+// [出金済:1][出金日:YYYY-MM-DD] タグを追加して管理する（platformFee等と同じ方式）。
+// CSV①：売れるたびに作る。1台につき「未収入金／売上高」「支払手数料／未収入金」の振替伝票を出力（freeeの勘定科目や補助科目には触れず、freee側で借方・貸方の各列を指定してインポートする）。
+// CSV②：メルカリ等から実際に銀行へ振り込まれた日にだけ作る。選んだ売却案件の未収入金合計を、
+//        「普通預金＋振込手数料／未収入金」の1伝票で取り崩す。出力すると同時に対象を「出金済」にする。
+
+function fmtDateSlash(iso) {
+  if (!iso) return '';
+  const p = iso.split('-');
+  return p.length === 3 ? (parseInt(p[1]) + '/' + parseInt(p[2])) : iso;
+}
+
+// ---- CSV①：売上登録用 ----
+function getSalesJournalTargets() {
+  const from = v('sales-from');
+  const to = v('sales-to');
+  return load()
+    .filter(d => isOutKubun(d.kubun) && (parseInt(d.totalPrice) || 0) > 0)
+    .filter(d => (!from || d.date >= from) && (!to || d.date <= to))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+function previewSalesJournal() {
+  const data = getSalesJournalTargets();
+  const wrap = document.getElementById('sales-journal-preview');
+  if (!data.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">対象データがありません</p>'; return; }
+
+  let sumSales = 0, sumFee = 0;
+  const rows = data.map(d => {
+    const sales = parseInt(d.totalPrice) || 0;
+    const fee = parseInt(d.platformFee) || 0;
+    sumSales += sales; sumFee += fee;
+    return `<tr>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.date}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.feature || ''}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${sales.toLocaleString()}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${fee.toLocaleString()}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${(sales - fee).toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="text-align:left;color:var(--text2)">
+        <th style="padding:4px 8px">日付</th><th style="padding:4px 8px">品名</th>
+        <th style="padding:4px 8px;text-align:right">売上</th>
+        <th style="padding:4px 8px;text-align:right">販売手数料</th>
+        <th style="padding:4px 8px;text-align:right">未収入金</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="font-weight:700;border-top:2px solid var(--border)">
+        <td style="padding:4px 8px" colspan="2">合計（${data.length}件）</td>
+        <td style="padding:4px 8px;text-align:right">¥${sumSales.toLocaleString()}</td>
+        <td style="padding:4px 8px;text-align:right">¥${sumFee.toLocaleString()}</td>
+        <td style="padding:4px 8px;text-align:right">¥${(sumSales - sumFee).toLocaleString()}</td>
+      </tr></tfoot>
+    </table>
+    </div>`;
+}
+
+function exportSalesJournalCSV() {
+  const data = getSalesJournalTargets();
+  if (!data.length) { toast('対象データがありません', 'err'); return; }
+
+  // freee「仕訳インポート（他社会計ソフトインポート＝振替伝票）」用の列形式。
+  // 伝票No.が同じ行は1つの仕訳としてまとめてインポートされる。
+  const header = ['伝票No', '日付', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '取引先', '摘要'];
+  const rows = [];
+  let denpyoSeq = 1;
+  data.forEach(d => {
+    const sales = parseInt(d.totalPrice) || 0;
+    const fee = parseInt(d.platformFee) || 0;
+    const item = d.feature || '';
+    const no = 'URI-' + (d.id || denpyoSeq);
+    rows.push([no, d.date, '未収入金', '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]);
+    if (fee > 0) {
+      rows.push([no, d.date, '支払手数料', '課対仕入10%', fee, '未収入金', '', fee, d.name || '', 'プラットフォーム手数料：' + item]);
+    }
+    denpyoSeq++;
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  ws['!cols'] = [10, 10, 14, 14, 10, 14, 14, 10, 14, 30].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '売上登録');
+  XLSX.writeFile(wb, '売上登録_freee用_' + todayISO().replace(/-/g, '') + '.xlsx');
+  toast(data.length + '件（' + rows.length + '行）のfreee用xlsxを出力しました', 'ok');
+}
+
+// ---- CSV②：出金登録用 ----
+function getPayoutPendingTargets() {
+  return load()
+    .filter(d => isOutKubun(d.kubun) && (parseInt(d.totalPrice) || 0) > 0 && !d.payoutDone)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+function renderPayoutPendingList() {
+  const wrap = document.getElementById('payout-pending-list');
+  if (!wrap) return;
+  const data = getPayoutPendingTargets();
+  if (!data.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">未出金（未収入金が残っている）売却案件はありません</p>'; return; }
+
+  wrap.innerHTML = `
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="text-align:left;color:var(--text2)">
+        <th style="padding:4px 8px"><input type="checkbox" id="pd-select-all" checked onchange="togglePayoutSelectAll(this)"></th>
+        <th style="padding:4px 8px">日付</th><th style="padding:4px 8px">品名</th>
+        <th style="padding:4px 8px;text-align:right">未収入金</th>
+      </tr></thead>
+      <tbody>${data.map(d => {
+        const receivable = (parseInt(d.totalPrice) || 0) - (parseInt(d.platformFee) || 0);
+        return `<tr>
+          <td style="padding:4px 8px;border-bottom:1px solid var(--border)"><input type="checkbox" class="pd-check" value="${d.uid}" data-amt="${receivable}" checked onchange="updatePayoutDiff()"></td>
+          <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.date}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.feature || ''}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${receivable.toLocaleString()}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
+    </div>`;
+  updatePayoutDiff();
+}
+
+function togglePayoutSelectAll(cb) {
+  document.querySelectorAll('.pd-check').forEach(el => { el.checked = cb.checked; });
+  updatePayoutDiff();
+}
+
+function getSelectedPayoutTotal() {
+  let sum = 0;
+  document.querySelectorAll('.pd-check:checked').forEach(el => { sum += parseInt(el.dataset.amt) || 0; });
+  return sum;
+}
+
+function updatePayoutDiff() {
+  const box = document.getElementById('payout-diff-check');
+  if (!box) return;
+  const selectedTotal = getSelectedPayoutTotal();
+  const bank = parseInt((document.getElementById('pd-bank')?.value || '').replace(/,/g, '')) || 0;
+  const fee = parseInt((document.getElementById('pd-fee')?.value || '').replace(/,/g, '')) || 0;
+  const diff = selectedTotal - (bank + fee);
+  if (!selectedTotal) { box.innerHTML = ''; return; }
+  if (diff === 0) {
+    box.innerHTML = `<span style="color:var(--accent)">選択した未収入金合計 ¥${selectedTotal.toLocaleString()} と、銀行入金額＋振込手数料が一致しています ✓</span>`;
+  } else {
+    box.innerHTML = `<span style="color:#e05252">選択した未収入金合計 ¥${selectedTotal.toLocaleString()} に対して、差額 ¥${diff.toLocaleString()} あります（入力を確認してください）</span>`;
+  }
+}
+
+function setMemoTag(memo, tagName, value) {
+  const re = new RegExp('\\[' + tagName + ':[^\\]]*\\]', 'g');
+  let m = (memo || '').replace(re, '').trim();
+  if (value !== null && value !== undefined && value !== '') {
+    m = ('[' + tagName + ':' + value + ']' + (m ? ' ' + m : '')).trim();
+  }
+  return m;
+}
+
+function exportPayoutJournalCSV() {
+  const checks = Array.from(document.querySelectorAll('.pd-check:checked'));
+  if (!checks.length) { toast('出金に含める売却案件を選択してください', 'err'); return; }
+  const payoutDate = v('pd-date');
+  const bank = parseInt((document.getElementById('pd-bank')?.value || '').replace(/,/g, '')) || 0;
+  const fee = parseInt((document.getElementById('pd-fee')?.value || '').replace(/,/g, '')) || 0;
+  if (!payoutDate || !bank) { toast('出金日・銀行入金額を入力してください', 'err'); return; }
+
+  const uids = checks.map(el => el.value);
+  const receivableTotal = getSelectedPayoutTotal();
+
+  if (receivableTotal !== bank + fee) {
+    if (!confirm('未収入金合計と（銀行入金額＋振込手数料）が一致していません。\n未収入金合計：¥' + receivableTotal.toLocaleString() + '\n銀行入金額＋手数料：¥' + (bank + fee).toLocaleString() + '\n\nこのまま出力・出金済登録を続けますか？')) return;
+  }
+
+  // freee「仕訳インポート（振替伝票）」用の1伝票（借方2行・貸方1行）
+  const no = 'DEP-' + payoutDate.replace(/-/g, '');
+  const header = ['伝票No', '日付', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '摘要'];
+  const rows = [
+    [no, payoutDate, '普通預金', '', bank, '', '', '', 'ウォレットからの振込入金'],
+  ];
+  if (fee > 0) rows.push([no, payoutDate, '支払手数料', '課対仕入10%', fee, '', '', '', '振込手数料']);
+  rows.push([no, payoutDate, '', '', '', '未収入金', '', receivableTotal, '未収入金の取り崩し']);
+
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  ws['!cols'] = [12, 10, 14, 14, 10, 14, 14, 10, 24].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '出金登録');
+  XLSX.writeFile(wb, '出金登録_freee用_' + payoutDate.replace(/-/g, '') + '.xlsx');
+
+  // 選択した売却レコードを「出金済」にマークしてローカル保存＋GAS反映
+  const all = load();
+  const updated = [];
+  all.forEach(r => {
+    if (uids.includes(String(r.uid))) {
+      r.payoutDone = true;
+      r.payoutDate = payoutDate;
+      r.memo = setMemoTag(r.memo, '出金済', '1');
+      r.memo = setMemoTag(r.memo, '出金日', payoutDate);
+      updated.push(r);
+    }
+  });
+  save(all);
+
+  let doneCount = 0;
+  updated.forEach(rec => {
+    gasPost(rec, function () {
+      doneCount++;
+      if (doneCount === updated.length) {
+        toast(updated.length + '件を出金済にしました（GAS反映完了）', 'ok');
+        renderPayoutPendingList();
+      }
+    });
+  });
+
+  document.getElementById('payout-journal-result').innerHTML =
+    `<p style="font-size:12px;color:var(--text2)">出力しました。${updated.length}件を出金済に更新中です…</p>`;
+
+  toast('CSV②を出力しました', 'ok');
+}
+
 // ===== CSV =====
 function exportCSV(type) {
   let data = load();
   if (type==='受入') data = data.filter(d=>isInKubun(d.kubun));
   else if (type==='払出') data = data.filter(d=>isOutKubun(d.kubun));
   if (!data.length) { toast('データなし','err'); return; }
-  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee','platformFee'];
+  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee','platformFee','payoutDone','payoutDate'];
   const csv = [keys.join(','), ...data.map(d=>keys.map(k=>'"'+String(d[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
