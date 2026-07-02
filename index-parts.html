@@ -1,0 +1,1730 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>古物台帳（バイク部品）</title>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #2e2e2e;
+    --accent: #e8a020;
+    --text: #e8e8e8;
+    --text2: #999;
+    --danger: #c03030;
+    --in-badge: #1a5a9a;
+    --out-badge: #9a2020;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh; }
+
+  header { background: var(--surface); border-bottom: 2px solid var(--accent); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  header h1 { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 0.05em; }
+  header span { font-size: 11px; color: var(--text2); }
+
+  nav { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); }
+  nav button { flex: 1; padding: 10px 4px; background: none; border: none; border-bottom: 3px solid transparent; color: var(--text2); font-size: 12px; cursor: pointer; }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab { display: none; padding: 12px; }
+  .tab.active { display: block; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; color: var(--accent); margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 3px; }
+  .field input, .field select, .field textarea {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); padding: 8px 10px; font-size: 13px;
+    outline: none; font-family: inherit; -webkit-appearance: none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+  .field textarea { resize: vertical; min-height: 56px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; margin-bottom: 10px; }
+  .badge.in { background: var(--in-badge); }
+  .badge.out { background: var(--out-badge); }
+  .next-id { font-size: 11px; color: var(--text2); font-family: monospace; margin-bottom: 10px; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 9px 16px; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn:active { opacity: 0.7; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-group { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  /* フィルター */
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .filter-bar select, .filter-bar input { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 7px 10px; font-size: 12px; outline: none; -webkit-appearance: none; }
+  .filter-bar input { flex: 1; min-width: 100px; }
+
+  /* 一覧カード */
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .entry { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; cursor: pointer; }
+  .entry:hover { border-color: var(--accent); }
+  .entry.in { border-left: 3px solid var(--in-badge); }
+  .entry.out { border-left: 3px solid var(--out-badge); }
+  .e-top { display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .e-id { font-family: monospace; font-size: 11px; color: var(--text2); }
+  .e-date { font-size: 11px; color: var(--text2); }
+  .e-cat { font-size: 11px; color: var(--text2); }
+  .e-name { font-size: 13px; font-weight: 600; margin: 2px 0; }
+  .e-partner { font-size: 12px; color: var(--text2); }
+  .e-price { font-size: 12px; color: var(--accent); margin-top: 2px; }
+  .sold-tag { font-size: 10px; background: #444; color: #aaa; padding: 1px 5px; border-radius: 8px; margin-left: 5px; }
+
+  /* モーダル */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200; overflow-y: auto; }
+  .overlay.open { display: flex; align-items: flex-start; justify-content: center; padding: 16px; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 480px; padding: 16px; }
+  .modal h3 { font-size: 14px; color: var(--accent); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .drow { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .drow:last-child { border-bottom: none; }
+  .dlabel { color: var(--text2); min-width: 90px; }
+  .dval { text-align: right; word-break: break-all; }
+
+  /* 統計 */
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; text-align: center; }
+  .stat-n { font-size: 24px; font-weight: 700; color: var(--accent); }
+  .stat-l { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+  .sync-box { background: var(--surface2); border-radius: 4px; padding: 8px 10px; font-size: 12px; color: var(--text2); margin-bottom: 10px; min-height: 34px; line-height: 1.5; }
+  .sync-box.ok { color: #4a4; }
+  .sync-box.err { color: #c44; }
+  .sync-box.loading { color: var(--accent); }
+
+  /* ローディング */
+  .loading { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 500; align-items: center; justify-content: center; color: var(--accent); font-size: 14px; }
+  .loading.show { display: flex; }
+
+  /* トースト */
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(80px); background: #222; border: 1px solid var(--border); color: var(--text); padding: 9px 20px; border-radius: 18px; font-size: 13px; z-index: 999; transition: transform .3s; white-space: nowrap; }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast.ok { border-color: #2a7; color: #2a7; }
+  #toast.err { border-color: #c44; color: #c44; }
+
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--border); }
+</style>
+</head>
+<body>
+
+<!-- メーカー入力用の候補リスト（一覧から選んでも、一覧にない文字を自由入力してもOK） -->
+<datalist id="maker-list">
+  <option value="HONDA">
+  <option value="SUZUKI">
+  <option value="YAMAHA">
+  <option value="KAWASAKI">
+  <option value="KYMCO">
+</datalist>
+
+<!-- 品目候補リスト（一覧から選んでも、一覧にない文字を自由入力してもOK） -->
+<datalist id="item-list">
+  <option value="バックレスト">
+  <option value="リアキャリア">
+  <option value="リアボックス">
+  <option value="工具">
+  <option value="ETC">
+  <option value="マフラー">
+</datalist>
+
+<header>
+  <h1>⚙ 古物台帳（バイク部品）</h1>
+  <span id="hCount">-</span>
+</header>
+
+<nav>
+  <button class="active" onclick="tab('t-in',this)">受入登録</button>
+  <button onclick="tab('t-out',this)">払出登録</button>
+  <button onclick="tab('t-list',this);renderList()">台帳一覧</button>
+  <button onclick="tab('t-manage',this);updateStats()">データ管理</button>
+</nav>
+
+<!-- ===== 受入登録 ===== -->
+<div id="t-in" class="tab active">
+  <div class="card">
+    <span class="badge in">受入（買受）</span>
+    <div class="next-id" id="nextInId">受入番号: 計算中...</div>
+    <h2>受入（買受）登録</h2>
+
+    <div class="field"><label>取引年月日 *</label><input type="date" id="in-date"></div>
+    <div class="field">
+      <label>品目 *</label>
+      <input type="text" id="in-category" list="item-list" placeholder="一覧から選択、または自由に記載（例：グリップヒーター）">
+    </div>
+    <div class="field"><label>メーカー</label><input type="text" id="in-maker" list="maker-list" placeholder="例：HONDA（一覧から選択、または自由入力）"></div>
+    <div class="field"><label>車名・品名 *</label><input type="text" id="in-model" placeholder="例：スーパーカブ110"></div>
+    <div class="field"><label>車台番号（フレームNo）</label><input type="text" id="in-frame" placeholder="例：JA44-1002305"></div>
+    <div class="row2">
+      <div class="field"><label>年式</label><input type="text" inputmode="numeric" id="in-age" placeholder="例：2020"></div>
+      <div class="field"><label>数量</label><input type="text" inputmode="numeric" id="in-qty" value="1"></div>
+    </div>
+    <div class="field">
+      <label>取得価格（円）</label>
+      <input type="text" inputmode="numeric" id="in-price" placeholder="0" oninput="showInPrice()">
+      <div id="in-price-disp" style="font-size:18px;font-weight:700;color:var(--accent);margin-top:6px;min-height:24px;text-align:right"></div>
+    </div>
+
+    <div class="field">
+      <label>相手方クイック入力</label>
+      <div id="partner-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:2px"></div>
+    </div>
+    <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="in-name" placeholder="例：株式会社 モトレボ 渡部伸正"></div>
+    <div class="field"><label>住所</label><input type="text" id="in-address" placeholder="例：埼玉県所沢市中富280-3"></div>
+    <div class="field"><label>職業</label><input type="text" id="in-job" placeholder="例：古物商"></div>
+    <div class="field"><label>年齢</label><input type="text" inputmode="numeric" id="in-age2" placeholder="法人の場合は空欄"></div>
+    <div class="row2">
+      <div class="field">
+        <label>本人確認方法</label>
+        <select id="in-idMethod">
+          <option value="">選択</option>
+          <option>古物商同士の取引</option>
+          <option>運転免許証</option>
+          <option>マイナンバーカード</option>
+          <option>パスポート</option>
+          <option>その他</option>
+        </select>
+      </div>
+      <div class="field"><label>書類番号</label><input type="text" id="in-idNo"></div>
+    </div>
+    <div class="field"><label>備考</label><textarea id="in-memo"></textarea></div>
+
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="submitIn()">GASに保存</button>
+      <button class="btn btn-secondary" onclick="clearIn()">クリア</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 払出登録 ===== -->
+<div id="t-out" class="tab">
+  <div class="card">
+    <span class="badge out">払出（売却）</span>
+    <div class="next-id" id="nextOutId">払出番号: 計算中...</div>
+    <h2>払出（売却）登録</h2>
+
+    <div class="field"><label>取引年月日 *</label><input type="date" id="out-date"></div>
+    <div class="field">
+      <label>対応する受入番号（在庫から選択）</label>
+      <input type="text" id="out-linked-search" placeholder="車台番号・車名・メーカー・年式・受入番号で絞り込み" oninput="renderLinkedOptions()" style="margin-bottom:6px">
+      <select id="out-linked"><option value="">（紐付けなし）</option></select>
+      <div id="out-linked-count" style="font-size:11px;color:var(--text2);margin-top:3px"></div>
+    </div>
+    <div class="field">
+      <label>品目 *</label>
+      <input type="text" id="out-category" list="item-list" placeholder="一覧から選択、または自由に記載（例：グリップヒーター）">
+    </div>
+    <div class="field"><label>メーカー</label><input type="text" id="out-maker" list="maker-list" placeholder="一覧から選択、または自由入力"></div>
+    <div class="field"><label>車名・品名 *</label><input type="text" id="out-model"></div>
+    <div class="field"><label>車台番号</label><input type="text" id="out-frame"></div>
+    <div class="row2">
+      <div class="field"><label>年式</label><input type="text" inputmode="numeric" id="out-age"></div>
+      <div class="field"><label>数量</label><input type="text" inputmode="numeric" id="out-qty" value="1"></div>
+    </div>
+    <div class="field">
+      <label>金額（円） *</label>
+      <input type="text" inputmode="numeric" id="out-total" placeholder="0" oninput="calcOutPrice()">
+      <div id="out-total-disp" style="font-size:18px;font-weight:700;color:var(--accent);margin-top:6px;min-height:24px;text-align:right"></div>
+    </div>
+    <input type="hidden" id="out-price">
+
+    <div class="field" style="border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--surface2)">
+      <label>プラットフォーム手数料（売却価格には影響しません・freeeで別途「手数料」として計上）</label>
+      <div id="platform-fee-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0"></div>
+      <input type="text" inputmode="numeric" id="out-platformfee" placeholder="0" oninput="showPlatformFee()">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-top:6px">
+        <span>手数料額</span><span id="disp-platformfee">¥ 0</span>
+      </div>
+    </div>
+
+    <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="out-name"></div>
+    <div class="field"><label>住所</label><input type="text" id="out-address"></div>
+    <div class="field"><label>職業</label><input type="text" id="out-job"></div>
+    <div class="field"><label>年齢</label><input type="text" inputmode="numeric" id="out-age2"></div>
+    <div class="row2">
+      <div class="field">
+        <label>本人確認方法</label>
+        <select id="out-idMethod">
+          <option value="">選択</option>
+          <option>古物商同士の取引</option>
+          <option>運転免許証</option>
+          <option>マイナンバーカード</option>
+          <option>パスポート</option>
+          <option>その他</option>
+        </select>
+      </div>
+      <div class="field"><label>書類番号</label><input type="text" id="out-idNo"></div>
+    </div>
+    <div class="field"><label>備考</label><textarea id="out-memo"></textarea></div>
+
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="submitOut()">GASに保存</button>
+      <button class="btn btn-secondary" onclick="clearOut()">クリア</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 台帳一覧 ===== -->
+<div id="t-list" class="tab">
+  <div class="filter-bar">
+    <select id="f-kubun" onchange="renderList()">
+      <option value="">全て</option>
+      <option value="受入">受入</option>
+      <option value="払出">払出</option>
+    </select>
+    <select id="f-cat" onchange="renderList()">
+      <option value="">全カテゴリ</option>
+      <option>バックレスト</option><option>リアキャリア</option><option>リアボックス</option>
+      <option>工具</option><option>ETC</option><option>マフラー</option>
+    </select>
+    <input type="text" id="f-text" placeholder="車名・車台番号・相手方で検索" oninput="renderList()">
+  </div>
+  <div id="list-body" class="list"><p style="color:var(--text2);text-align:center;padding:20px">読み込み中...</p></div>
+</div>
+
+<!-- ===== データ管理 ===== -->
+<div id="t-manage" class="tab">
+  <div class="stats" style="grid-template-columns:1fr">
+    <div class="stat" style="text-align:left">
+      <div style="font-size:13px;color:var(--accent);font-weight:700;margin-bottom:8px">📥 受入</div>
+      <div style="display:flex;gap:16px;align-items:baseline">
+        <div><span id="s-in" style="font-size:22px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 件</span></div>
+        <div><span id="s-in-amount" style="font-size:18px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 合計金額</span></div>
+      </div>
+    </div>
+
+    <div class="stat" style="text-align:left">
+      <div style="font-size:13px;color:var(--accent);font-weight:700;margin-bottom:8px">📤 払出</div>
+      <div style="display:flex;gap:16px;align-items:baseline">
+        <div><span id="s-out" style="font-size:22px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 件</span></div>
+        <div><span id="s-out-amount" style="font-size:18px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 合計金額</span></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
+        本体価格合計　<span id="s-out-body">-</span>　／　サービス料金合計　<span id="s-out-service">-</span>
+      </div>
+    </div>
+
+    <div class="stat" style="text-align:left">
+      <div style="font-size:13px;color:var(--accent);font-weight:700;margin-bottom:8px">📦 在庫</div>
+      <div style="display:flex;gap:16px;align-items:baseline">
+        <div><span id="s-stock" style="font-size:22px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 件</span></div>
+        <div><span id="s-stock-amount" style="font-size:18px;font-weight:700;color:var(--accent)">-</span><span style="font-size:11px;color:var(--text2)"> 合計金額</span></div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
+        対応する受入番号が紐付いていない払出は、在庫の件数・金額に影響しません
+      </div>
+    </div>
+
+    <div class="stat" style="text-align:left">
+      <div style="font-size:12px;color:var(--text2)">総件数（受入＋払出）：<span id="s-total" style="color:var(--text);font-weight:700">-</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>GAS同期</h2>
+    <div class="sync-box" id="syncBox">未確認</div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px">GASスプレッドシートからデータを取得してローカルに保存します。</p>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="syncFromGAS()">GASから全件取得</button>
+      <button class="btn btn-secondary" onclick="pingGAS()">接続確認</button>
+    </div>
+    <p style="font-size:12px;color:#c88;margin:10px 0 6px">注意：下のボタンはローカルの全データでGAS側を完全に上書きします。</p>
+    <div class="btn-group">
+      <button class="btn btn-danger" onclick="pushAllToGAS()">ローカル全件をGASに上書き送信</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>CSVエクスポート</h2>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="exportCSV('受入')">受入CSV</button>
+      <button class="btn btn-secondary" onclick="exportCSV('払出')">払出CSV</button>
+      <button class="btn btn-secondary" onclick="exportCSV('全て')">全件CSV</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>データ内訳チェック</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">件数が想定と合わない場合に、区分ごとの件数やuid重複を確認できます。</p>
+    <div class="btn-group">
+      <button class="btn" onclick="checkDataBreakdown()">内訳・重複をチェック</button>
+    </div>
+    <pre id="breakdownResult" style="font-size:12px;white-space:pre-wrap;margin-top:8px;display:none;background:var(--bg2);padding:8px;border-radius:6px"></pre>
+    <div id="cleanupBtnWrap" style="display:none;margin-top:8px">
+      <button class="btn btn-danger" onclick="removeBlankKubun()">受入・払出以外のデータを削除する</button>
+    </div>
+    <div id="dupCleanupBtnWrap" style="display:none;margin-top:8px">
+      <button class="btn btn-danger" onclick="removeDuplicateUids()">uid重複を解消する（各uidで最も古い1件だけ残す）</button>
+    </div>
+    <div class="btn-group" style="margin-top:8px">
+      <button class="btn" onclick="fixDateFormats()">取引日の形式異常をチェック・修正</button>
+      <button class="btn" onclick="fixUridashiKubun()">「払出（売渡）」を「払出（売却）」に修正</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>受入⇔払出の自動紐付け</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">過去にGAS同期等で取り込んだデータは「対応する受入番号」が設定されていないことがあります。車台番号が一致する受入・払出のペアを自動で探して紐付けます（備考の手書きテキストは見ません。車台番号の完全一致のみで判定します）。</p>
+    <div class="btn-group">
+      <button class="btn" onclick="previewAutoLink()">紐付け候補をチェック</button>
+    </div>
+    <pre id="autoLinkResult" style="font-size:12px;white-space:pre-wrap;margin-top:8px;display:none;background:var(--bg2);padding:8px;border-radius:6px"></pre>
+    <div id="autoLinkApplyWrap" style="display:none;margin-top:8px">
+      <button class="btn btn-danger" onclick="applyAutoLink()">上記の候補を一括で紐付ける</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>JSONバックアップ</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">ID整理など大きな操作の前に、現在のローカルデータをファイルに保存しておくことをおすすめします。</p>
+    <div class="btn-group">
+      <button class="btn" onclick="exportBackupJSON()">現在のデータをバックアップ保存</button>
+      <button class="btn" onclick="document.getElementById('restoreFile').click()">バックアップから復元</button>
+      <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="importBackupJSON(this)">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ID整理（再採番）</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">過去データを取引年月日の古い順に並べ直し、受入・払出それぞれを1からの連番に振り直します。払出の「対応受入番号」やメモ内のタグも自動で追従します。</p>
+    <p style="font-size:12px;color:#c88;margin-bottom:8px">注意：ローカルのみの変更です。GAS側にも反映する場合は、この後に下の「ローカル全件をGASに上書き送信」を実行してください。</p>
+    <div class="btn-group">
+      <button class="btn btn-danger" onclick="renumberIds()">受入・払出のIDを1から振り直す</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ローカルデータ削除</h2>
+    <p style="font-size:12px;color:#c88;margin-bottom:8px">注意：取り消せません。GASのデータは残ります。</p>
+    <button class="btn btn-danger" onclick="clearLocal()">ローカル全削除</button>
+  </div>
+</div>
+
+<!-- 詳細モーダル -->
+<div class="overlay" id="overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <h3 id="m-title">詳細</h3>
+    <div id="m-body"></div>
+    <div class="btn-group" style="margin-top:14px">
+      <button class="btn btn-primary" onclick="editEntry()">編集</button>
+      <button class="btn btn-danger" onclick="deleteEntry()">ローカルから削除</button>
+      <button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading" id="loading"><span>処理中...</span></div>
+<div id="toast"></div>
+
+<script>
+// ⚠ バイク部品台帳は車両台帳とは別データとして管理するため、保存先（GASのスプレッドシート）も
+//    別のものを用意し、下記URLを差し替えてください（同じシートに混在させると車両/部品の区別が
+//    つかなくなるため非推奨）。差し替えるまでは車両台帳と同じGASを暫定的に指しています。
+const GAS = 'https://script.google.com/macros/s/AKfycbyzPq8wPrhrlkNExoz0vppHMnbwMZxMxUhtsBo9hGt2gMr54FyHhkm77ywET7hOB0Zi/exec';
+const LS = 'kobutu_parts_v1';
+
+// ===== ローカルストレージ =====
+function load() { try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e) { return []; } }
+function save(d) {
+  try {
+    localStorage.setItem(LS, JSON.stringify(d));
+  } catch (e) {
+    throw new Error('ローカル保存に失敗しました（' + e.message + '）。プライベートブラウズモードを使用している場合は通常モードに切り替えてください。');
+  }
+}
+
+// ===== UID =====
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+
+// ===== 採番 =====
+// 受入・払出は別々の連番（受入1,2,3... 払出1,2,3...）として扱う。
+// GASの id 列は受入・払出共通だが、全ての参照箇所で id と kubun をセットで
+// 比較しているため、番号が重複しても受入/払出のレコードを取り違えることはない。
+function isInKubun(k) { return k && k.includes('受入'); }
+function isOutKubun(k) { return k && k.includes('払出'); }
+
+function nextIdForKubun(kindFilterFn) {
+  const data = load();
+  const nums = data.filter(d => kindFilterFn(d.kubun)).map(d => parseInt(d.id||0)).filter(n=>!isNaN(n));
+  return nums.length ? Math.max(...nums)+1 : 1;
+}
+function nextInId() { return nextIdForKubun(isInKubun); }
+function nextOutId() { return nextIdForKubun(isOutKubun); }
+
+function updateNextIds() {
+  document.getElementById('nextInId').textContent = '受入番号: ' + nextInId();
+  document.getElementById('nextOutId').textContent = '払出番号: ' + nextOutId();
+}
+
+function updateHeaderCount() {
+  const d = load();
+  const ic = d.filter(r=>isInKubun(r.kubun)).length;
+  const oc = d.filter(r=>isOutKubun(r.kubun)).length;
+  document.getElementById('hCount').textContent = `受入${ic} 払出${oc}`;
+}
+
+// feature = "メーカー\n車名\nフレームNo"
+function buildFeature(maker, model, frame) {
+  return [maker, model, frame].filter(Boolean).join('\n');
+}
+function parseFeature(feature) {
+  const parts = (feature || '').split('\n');
+  return { maker: parts[0]||'', model: parts[1]||'', frame: parts[2]||'' };
+}
+
+// ===== タブ =====
+function tab(id, btn) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+  if (id === 't-out') updateLinkedSelect();
+}
+
+// ===== 受入保存 =====
+// 実際のGASスキーマ(FIELDS): uid,id,date,kubun,category,qty,feature,price,age,idMethod,idNo,name,address,job,memo,sold,createdAt,linkedInId,totalPrice,serviceFee
+// （platformFeeのみGAS側に列がないため保存されず、memo内の[手数料:xxx]タグとしてのみ記録される）
+function submitIn() {
+  const isEditing = editMode === 'in';
+  const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
+  const nextIn = (isEditing && existing) ? existing.id : nextInId();
+
+  const rec = {
+    uid: (isEditing && existing) ? existing.uid : uid(),
+    id: nextIn,
+    date: v('in-date'),
+    kubun: '受入（買受）',
+    category: v('in-category'),
+    qty: v('in-qty') || '1',
+    feature: buildFeature(v('in-maker'), v('in-model'), v('in-frame')),
+    price: v('in-price'),
+    age: v('in-age2'),
+    idMethod: v('in-idMethod'),
+    idNo: v('in-idNo'),
+    name: v('in-name'),
+    address: v('in-address'),
+    job: v('in-job'),
+    memo: v('in-memo'),
+    sold: (isEditing && existing) ? existing.sold : false,
+    createdAt: (isEditing && existing) ? existing.createdAt : new Date().toISOString()
+  };
+
+  if (!rec.date || !rec.category || !v('in-model') || !rec.name) {
+    toast('必須項目（日付・種別・車名・相手方）を入力してください', 'err'); return;
+  }
+
+  if (isEditing) {
+    if (!existing) { toast('編集対象が見つかりません（削除された可能性があります）', 'err'); editMode = null; editUID = null; return; }
+    const all = load();
+    const idx = all.findIndex(r => String(r.uid) === String(editUID));
+    if (idx < 0) { toast('編集対象が見つかりません', 'err'); return; }
+
+    gasPost(rec, function(res) {
+      if (res.status === 'ok') {
+        all[idx] = rec;
+        save(all);
+        updateNextIds(); updateHeaderCount();
+        toast('受入 ' + nextIn + ' を更新しました', 'ok');
+        editMode = null; editUID = null;
+        clearIn();
+      } else {
+        toast('GASへの反映に失敗しました（ローカルは未変更）: ' + (res.message||'不明'), 'err');
+      }
+    });
+    return;
+  }
+
+  gasPost(rec, function(res) {
+    if (res.status === 'ok') {
+      const all = load(); all.push(rec); save(all);
+      updateNextIds(); updateHeaderCount();
+      toast('受入 ' + nextIn + ' を保存しました', 'ok');
+      clearIn();
+    } else {
+      toast('エラー: ' + (res.message||'不明'), 'err');
+    }
+  });
+}
+
+// ===== 払出保存 =====
+// linkedInId・合計金額・作業費明細は memo に埋め込んで記録する（GASに専用列がないため）
+function submitOut() {
+  const isEditing = editMode === 'out';
+  const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
+  const nextOut = (isEditing && existing) ? existing.id : nextOutId();
+
+  calcOutPrice(); // hidden の out-price を最新化（部品台帳では金額そのもの）
+  const linkedInId = v('out-linked');
+  const totalPrice = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
+  const bodyPrice = totalPrice;
+  const serviceFee = 0;
+  const platformFee = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
+  const serviceMemo = '';
+
+  // memoに付帯情報を埋め込み（後で正規表現で抽出できる形式）
+  // ※[手数料:xxx] はプラットフォーム手数料。サービス料金（[作業費:xxx]）とは別物で、
+  //   物品の売却価格（本体金額/price）の計算には一切含めていない。
+  const metaTags = [];
+  if (linkedInId) metaTags.push('[対応受入:' + linkedInId + ']');
+  if (totalPrice) metaTags.push('[合計金額:' + totalPrice + ']');
+  if (serviceFee) metaTags.push('[作業費:' + serviceFee + ']');
+  if (platformFee) metaTags.push('[手数料:' + platformFee + ']');
+  const fullMemo = [metaTags.join(''), v('out-memo'), serviceMemo].filter(Boolean).join(' ');
+
+  const rec = {
+    uid: (isEditing && existing) ? existing.uid : uid(),
+    id: nextOut,
+    date: v('out-date'),
+    kubun: '払出（売却）',
+    category: v('out-category'),
+    qty: v('out-qty') || '1',
+    feature: buildFeature(v('out-maker'), v('out-model'), v('out-frame')),
+    price: bodyPrice || totalPrice, // 本体金額（作業費がなければ合計金額そのもの）
+    age: v('out-age2'),
+    idMethod: v('out-idMethod'),
+    idNo: v('out-idNo'),
+    name: v('out-name'),
+    address: v('out-address'),
+    job: v('out-job'),
+    memo: fullMemo,
+    sold: (isEditing && existing) ? existing.sold : false,
+    createdAt: (isEditing && existing) ? existing.createdAt : new Date().toISOString(),
+    // GAS側にも同名の列があるため保存される（platformFeeのみ列がなくmemoタグのみ）
+    linkedInId: linkedInId,
+    totalPrice: totalPrice,
+    serviceFee: serviceFee,
+    platformFee: platformFee
+  };
+
+  if (!rec.date || !rec.category || !v('out-model') || !rec.name) {
+    toast('必須項目（日付・種別・車名・相手方）を入力してください', 'err'); return;
+  }
+
+  if (isEditing) {
+    if (!existing) { toast('編集対象が見つかりません（削除された可能性があります）', 'err'); editMode = null; editUID = null; return; }
+    const all = load();
+    const idx = all.findIndex(r => String(r.uid) === String(editUID));
+    if (idx < 0) { toast('編集対象が見つかりません', 'err'); return; }
+
+    gasPost(rec, function(res) {
+      if (res.status !== 'ok') {
+        toast('GASへの反映に失敗しました（ローカルは未変更）: ' + (res.message||'不明'), 'err');
+        return;
+      }
+
+      // 紐付け先が変わった場合、旧・新の受入レコードの売済フラグを調整し、GASにも反映する
+      const oldLinked = existing.linkedInId;
+      let oldInRec = null, newInRec = null;
+      if (oldLinked && String(oldLinked) !== String(linkedInId)) {
+        const oi = all.findIndex(r => String(r.id) === String(oldLinked) && isInKubun(r.kubun));
+        if (oi >= 0) { all[oi].sold = false; oldInRec = all[oi]; }
+      }
+      if (linkedInId) {
+        const ni = all.findIndex(r => String(r.id) === String(linkedInId) && isInKubun(r.kubun));
+        if (ni >= 0) { all[ni].sold = true; newInRec = all[ni]; }
+      }
+
+      function finishOutEdit() {
+        all[idx] = rec;
+        save(all);
+        updateNextIds(); updateHeaderCount();
+        toast('払出 ' + nextOut + ' を更新しました', 'ok');
+        editMode = null; editUID = null;
+        clearOut();
+      }
+
+      const inUpdates = [oldInRec, newInRec].filter(Boolean);
+      if (!inUpdates.length) { finishOutEdit(); return; }
+
+      let remaining = inUpdates.length;
+      let hadError = false;
+      inUpdates.forEach(function(inRec) {
+        gasPost(inRec, function(inRes) {
+          if (inRes.status !== 'ok') hadError = true;
+          remaining--;
+          if (remaining === 0) {
+            if (hadError) toast('払出は更新しましたが、受入の売済フラグのGAS反映に失敗しました', 'err');
+            finishOutEdit();
+          }
+        });
+      });
+    });
+    return;
+  }
+
+  gasPost(rec, function(res) {
+    if (res.status === 'ok') {
+      const all = load();
+      all.push(rec);
+      // 受入に売済マーク。ローカル更新後、GAS側にも同じレコードをsave送信して反映する
+      let inRec = null;
+      if (linkedInId) {
+        const idx = all.findIndex(r => String(r.id) === String(linkedInId) && isInKubun(r.kubun));
+        if (idx >= 0) { all[idx].sold = true; inRec = all[idx]; }
+      }
+      save(all);
+      updateNextIds(); updateHeaderCount();
+
+      function finish() {
+        toast('払出 ' + nextOut + ' を保存しました', 'ok');
+        clearOut();
+      }
+
+      if (inRec) {
+        gasPost(inRec, function(inRes) {
+          if (inRes.status !== 'ok') toast('払出は保存しましたが、受入の売済フラグのGAS反映に失敗しました', 'err');
+          finish();
+        });
+      } else {
+        finish();
+      }
+    } else {
+      toast('エラー: ' + (res.message||'不明'), 'err');
+    }
+  });
+}
+
+// ===== memo内の付帯情報タグを復元 =====
+// submitOutで埋め込んだ [対応受入:5][合計金額:50000][作業費:3000][手数料:5000] を解析してフィールドに戻す
+function parseMetaTags(row) {
+  if (!row.memo) return;
+  if (typeof row.memo !== 'string') row.memo = String(row.memo);
+  const m1 = row.memo.match(/\[対応受入:([^\]]+)\]/);
+  const m2 = row.memo.match(/\[合計金額:([^\]]+)\]/);
+  const m3 = row.memo.match(/\[作業費:([^\]]+)\]/);
+  const m4 = row.memo.match(/\[手数料:([^\]]+)\]/);
+  if (m1) row.linkedInId = m1[1];
+  if (m2) row.totalPrice = parseInt(m2[1]) || 0;
+  if (m3) row.serviceFee = parseInt(m3[1]) || 0;
+  if (m4) row.platformFee = parseInt(m4[1]) || 0;
+}
+
+// ===== ローカル全件をGASへ一括アップロード（上書き、バッチ分割） =====
+function pushAllToGAS() {
+  const data = load();
+  if (!data.length) { toast('ローカルにデータがありません', 'err'); return; }
+  if (!confirm('ローカルの' + data.length + '件で、GAS側のデータを完全に上書きします。よろしいですか？')) return;
+
+  // 日本語が多いとURLエンコードで膨らみ、件数固定だとURLが長すぎて
+  // 送信に失敗することがあるため、エンコード後の文字数を基準に動的分割する。
+  const MAX_URL_CHARS = 1800;
+  const batches = [];
+  let current = [];
+  let currentLen = 0;
+  data.forEach(rec => {
+    const encLen = encodeURIComponent(JSON.stringify(rec)).length;
+    if (current.length && currentLen + encLen > MAX_URL_CHARS) {
+      batches.push(current);
+      current = [];
+      currentLen = 0;
+    }
+    current.push(rec);
+    currentLen += encLen;
+  });
+  if (current.length) batches.push(current);
+
+  showLoad(true, 'アップロード中... (0/' + batches.length + ')');
+  setSyncBox('アップロード中... (0/' + batches.length + ')', 'loading');
+
+  let idx = 0;
+  let retryCount = 0;
+  function sendNext() {
+    if (idx >= batches.length) {
+      showLoad(false);
+      setSyncBox('アップロード完了 ' + data.length + '件（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+      toast('GASへ' + data.length + '件アップロードしました', 'ok');
+      return;
+    }
+    const isFirst = idx === 0;
+    const batch = batches[idx];
+    const action = isFirst ? 'saveAllStart' : 'saveAllAppend';
+    const url = GAS + '?action=' + action + '&data=' + encodeURIComponent(JSON.stringify(batch));
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+
+    fetch(url, { signal: controller.signal })
+      .then(r => r.json())
+      .then(res => {
+        clearTimeout(timer);
+        if (res && res.status === 'ok') {
+          idx++; retryCount = 0;
+          showLoad(true, 'アップロード中... (' + idx + '/' + batches.length + ')');
+          setSyncBox('アップロード中... (' + idx + '/' + batches.length + ')', 'loading');
+          sendNext();
+        } else {
+          showLoad(false);
+          setSyncBox('アップロード失敗（バッチ' + (idx+1) + '）: ' + (res?.message || JSON.stringify(res)), 'err');
+          toast('アップロード失敗', 'err');
+        }
+      })
+      .catch(err => {
+        clearTimeout(timer);
+        handleFailure(err && err.name === 'AbortError' ? 'タイムアウト' : '接続エラー');
+      });
+
+    function handleFailure(label) {
+      if (retryCount < 2) {
+        retryCount++;
+        showLoad(true, '再試行中... (バッチ' + (idx+1) + ', ' + retryCount + '回目)');
+        setSyncBox('再試行中... (バッチ' + (idx+1) + ', ' + retryCount + '回目／' + label + ')', 'loading');
+        setTimeout(sendNext, 800);
+      } else {
+        showLoad(false);
+        setSyncBox(label + '（バッチ' + (idx+1) + '／' + batch.length + '件、' + retryCount + '回再試行）。件数をさらに減らすか、通信環境を確認してください。', 'err');
+      }
+    }
+  }
+  sendNext();
+}
+
+// ===== JSONP送信 =====
+function gasPost(rec, cb) {
+  showLoad(true);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  const url = GAS + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
+  fetch(url, { signal: controller.signal })
+    .then(r => r.json())
+    .then(res => { clearTimeout(timer); showLoad(false); cb(res); })
+    .catch(err => {
+      clearTimeout(timer); showLoad(false);
+      toast(err && err.name === 'AbortError' ? 'タイムアウト' : 'GAS接続エラー', 'err');
+    });
+}
+
+// ===== GAS全件取得 =====
+// 実際のGASは action='save' 以外なら無条件で全件返す（action=getAll という概念はない）
+function syncFromGAS() {
+  let retryCount = 0;
+  function attempt() {
+    setSyncBox(retryCount ? ('再試行中...（' + retryCount + '回目）') : '取得中...', 'loading');
+    showLoad(true, retryCount ? ('再試行中...（' + retryCount + '回目）') : '取得中...');
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+
+    fetch(GAS, { signal: controller.signal })
+      .then(r => r.json())
+      .then(res => {
+        clearTimeout(timer);
+        showLoad(false);
+        if (res && Array.isArray(res.entries)) {
+          const gasData = res.entries;
+          const local = load();
+          const localUIDs = new Set(local.map(r => String(r.uid)));
+          let added = 0;
+          const errors = [];
+          gasData.forEach((row, i) => {
+            try {
+              const u = String(row.uid);
+              if (!localUIDs.has(u)) {
+                if (row.sold === undefined) row.sold = false;
+                row.date = normalizeDateStr(row.date);
+                parseMetaTags(row); // memo内の[対応受入:xx]等を復元
+                local.push(row); added++;
+                localUIDs.add(u); // GAS側に同一uidの行が複数あっても二重追加しない
+              }
+            } catch (e) {
+              errors.push('行' + i + '(uid=' + row.uid + '): ' + e.message);
+            }
+          });
+          try {
+            save(local);
+          } catch (saveErr) {
+            showLoad(false);
+            setSyncBox(saveErr.message, 'err');
+            toast('保存に失敗しました', 'err');
+            return;
+          }
+          updateNextIds(); updateHeaderCount();
+          if (errors.length) {
+            setSyncBox('同期完了（一部エラー） ' + gasData.length + '件中' + added + '件追加、' + errors.length + '件エラー\n' + errors.slice(0,5).join('\n'), 'err');
+            toast(errors.length + '件でエラーが発生しました', 'err');
+          } else {
+            setSyncBox('同期完了 ' + gasData.length + '件取得、' + added + '件追加（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+            toast(added + '件追加しました', 'ok');
+          }
+          buildPartnerButtons();
+        } else {
+          setSyncBox('取得失敗: ' + (res?.message || JSON.stringify(res)), 'err');
+          toast('取得失敗', 'err');
+        }
+      })
+      .catch(err => {
+        clearTimeout(timer);
+        handleFailure(err && err.name === 'AbortError' ? 'タイムアウト' : '接続エラー');
+      });
+
+
+    function handleFailure(label) {
+      if (retryCount < 2) {
+        retryCount++;
+        setTimeout(attempt, 800);
+      } else {
+        showLoad(false);
+        setSyncBox(label + '（' + retryCount + '回再試行しても失敗）。通信環境を確認してください。', 'err');
+      }
+    }
+  }
+  attempt();
+}
+
+// ===== 接続確認 =====
+// GASに ping action は存在しないため、全件取得が成功するかどうかで判定する
+function pingGAS() {
+  setSyncBox('接続確認中...', 'loading');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  fetch(GAS, { signal: controller.signal })
+    .then(r => r.json())
+    .then(res => {
+      clearTimeout(timer);
+      if (res && Array.isArray(res.entries)) {
+        const n = res.entries.length;
+        setSyncBox('✓ GAS接続OK（台帳 ' + n + '件、' + new Date().toLocaleTimeString('ja-JP') + '）', 'ok');
+      } else {
+        setSyncBox('応答: ' + (res?.message || JSON.stringify(res)), 'err');
+      }
+    })
+    .catch(err => {
+      clearTimeout(timer);
+      setSyncBox(err && err.name === 'AbortError' ? 'タイムアウト' : '接続エラー', 'err');
+    });
+}
+
+// ===== 台帳一覧 =====
+// 払出は合計金額（totalPrice）があればそれを表示用価格として使う。なければ本体価格（price）で代替
+function displayPrice(d) {
+  const t = parseInt(d.totalPrice);
+  return (isOutKubun(d.kubun) && !isNaN(t) && t) ? t : d.price;
+}
+
+function renderList() {
+  const kubun = document.getElementById('f-kubun').value;
+  const cat = document.getElementById('f-cat').value;
+  const txt = document.getElementById('f-text').value.toLowerCase();
+
+  let data = load().filter(d => {
+    if (kubun === '受入' && !isInKubun(d.kubun)) return false;
+    if (kubun === '払出' && !isOutKubun(d.kubun)) return false;
+    if (cat && d.category !== cat) return false;
+    if (txt) {
+      const f = parseFeature(d.feature);
+      const s = (f.model+f.maker+f.frame+d.name+'').toLowerCase();
+      if (!s.includes(txt)) return false;
+    }
+    return true;
+  });
+
+  data.sort((a,b) => {
+    const c = (b.date||'').localeCompare(a.date||'');
+    if (c !== 0) return c;
+    return (parseInt(b.id,10)||0) - (parseInt(a.id,10)||0);
+  });
+
+  const body = document.getElementById('list-body');
+  if (!data.length) { body.innerHTML='<p style="color:var(--text2);text-align:center;padding:20px">該当なし</p>'; return; }
+
+  const allData = load();
+  body.innerHTML = data.map(d => {
+    const f = parseFeature(d.feature);
+    const isIn = isInKubun(d.kubun);
+    const entryId = d.id || '';
+    const soldFlag = isIn && allData.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(entryId));
+    return `<div class="entry ${isIn?'in':'out'}" onclick="showDetail('${d.uid}')">
+      <div class="e-top">
+        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}</span>
+        <span class="e-date">${d.date||''}</span>
+      </div>
+      <div class="e-cat">${d.category||''}</div>
+      <div class="e-name">${[f.maker,f.model].filter(Boolean).join(' ')}</div>
+      <div class="e-partner">${isIn?'仕入先':'売却先'}：${d.name||''}</div>
+      <div class="e-price">${(() => { const amt = displayPrice(d); return amt ? '¥'+Number(amt).toLocaleString() : ''; })()}</div>
+    </div>`;
+  }).join('');
+}
+
+// ===== 詳細モーダル =====
+let currentUID = null;
+let editMode = null; // null | 'in' | 'out'
+let editUID = null;
+function showDetail(u) {
+  const d = load().find(r => String(r.uid) === String(u));
+  if (!d) return;
+  currentUID = u;
+  const f = parseFeature(d.feature);
+  const isIn = isInKubun(d.kubun);
+  document.getElementById('m-title').textContent = (isIn?'受入':'払出') + '-' + (d.id||'') + '　' + d.kubun;
+  const rows = [
+    ['区分', d.kubun],
+    ['取引日', d.date],
+    ['品目', d.category],
+    ['メーカー', f.maker],
+    ['車名・品名', f.model],
+    ['車台番号', f.frame],
+    ['年式', d.age],
+    ['数量', d.qty],
+    ['価格', (() => { const amt = displayPrice(d); return amt ? '¥' + Number(amt).toLocaleString() : ''; })()],
+    ['相手方', d.name],
+    ['住所', d.address],
+    ['職業', d.job],
+    ['年齢', d.age],
+    ['確認方法', d.idMethod],
+    ['書類番号', d.idNo],
+    ['備考', d.memo],
+    isOutKubun(d.kubun) ? ['対応受入番号', d.linkedInId] : null,
+    isIn ? ['売却済', load().some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id)) ? 'はい' : 'いいえ'] : null,
+  ].filter(r => r && r[1]);
+
+  document.getElementById('m-body').innerHTML = rows.map(([l,v])=>
+    `<div class="drow"><span class="dlabel">${l}</span><span class="dval">${v}</span></div>`
+  ).join('');
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('overlay')) {
+    document.getElementById('overlay').classList.remove('open');
+    currentUID = null;
+  }
+}
+
+// ===== 既存レコードの編集 =====
+// GAS側のaction=saveはuidが既存なら上書き、なければ追加するupsert仕様のため、
+// 編集フォーム送信時（submitIn/submitOut）にgasPost()でGASへも即時反映する。
+function editEntry() {
+  if (!currentUID) return;
+  const d = load().find(r => String(r.uid) === String(currentUID));
+  if (!d) return;
+  const isIn = isInKubun(d.kubun);
+  const f = parseFeature(d.feature);
+  closeModal();
+
+  if (isIn) {
+    editMode = 'in'; editUID = d.uid;
+    tab('t-in', document.querySelectorAll('nav button')[0]);
+    document.getElementById('in-date').value = normalizeDateStr(d.date) || '';
+    document.getElementById('in-category').value = d.category || '';
+    document.getElementById('in-maker').value = f.maker || '';
+    document.getElementById('in-model').value = f.model || '';
+    document.getElementById('in-frame').value = f.frame || '';
+    document.getElementById('in-age').value = d.age || '';
+    document.getElementById('in-qty').value = d.qty || '1';
+    document.getElementById('in-price').value = d.price || '';
+    showInPrice();
+    document.getElementById('in-age2').value = d.age || '';
+    document.getElementById('in-idMethod').value = d.idMethod || '';
+    document.getElementById('in-idNo').value = d.idNo || '';
+    document.getElementById('in-name').value = d.name || '';
+    document.getElementById('in-address').value = d.address || '';
+    document.getElementById('in-job').value = d.job || '';
+    document.getElementById('in-memo').value = d.memo || '';
+    document.querySelector('#t-in .btn-primary').textContent = '更新を保存（編集中：受入-' + d.id + '）';
+  } else {
+    editMode = 'out'; editUID = d.uid;
+    tab('t-out', document.querySelectorAll('nav button')[1]); // updateLinkedSelect()が実行される
+    document.getElementById('out-date').value = normalizeDateStr(d.date) || '';
+
+    // 紐付け中の受入は在庫選択肢から除外されているため、編集中の自分自身の分だけ選択肢に追加する
+    if (d.linkedInId && !stockCache.some(s => String(s.id) === String(d.linkedInId))) {
+      const inRec = load().find(r => String(r.id) === String(d.linkedInId) && isInKubun(r.kubun));
+      if (inRec) {
+        const f2 = parseFeature(inRec.feature);
+        stockCache.push({ id: d.linkedInId, maker: f2.maker || '', model: f2.model || '', frame: f2.frame || '', age: inRec.age || '', category: inRec.category || '', editing: true });
+      } else {
+        stockCache.push({ id: d.linkedInId, maker: '（編集中・対応する受入データが見つかりません）', model: '', frame: '', age: '', category: '', editing: true });
+      }
+      renderLinkedOptions();
+    }
+    document.getElementById('out-linked').value = d.linkedInId || '';
+
+    document.getElementById('out-category').value = d.category || '';
+    document.getElementById('out-maker').value = f.maker || '';
+    document.getElementById('out-model').value = f.model || '';
+    document.getElementById('out-frame').value = f.frame || '';
+    document.getElementById('out-age').value = d.age || '';
+    document.getElementById('out-qty').value = d.qty || '1';
+    document.getElementById('out-total').value = d.totalPrice || d.price || '';
+    calcOutPrice();
+    document.getElementById('out-platformfee').value = d.platformFee || '';
+    showPlatformFee();
+    document.getElementById('out-age2').value = d.age || '';
+    document.getElementById('out-idMethod').value = d.idMethod || '';
+    document.getElementById('out-idNo').value = d.idNo || '';
+    document.getElementById('out-name').value = d.name || '';
+    document.getElementById('out-address').value = d.address || '';
+    document.getElementById('out-job').value = d.job || '';
+    // memoに埋め込まれた付帯タグ（対応受入・合計金額・作業費・手数料）を取り除いた残りを表示
+    // ※個別の作業項目（品目名ごとの内訳）はタグ化されておらず備考に文字として混在しているため、
+    //   service-rowsへの個別復元はできない（このアプリのデータ構造上、確認できません）。
+    let memo = d.memo || '';
+    memo = memo.replace(/\[対応受入:[^\]]+\]/, '').replace(/\[合計金額:[^\]]+\]/, '').replace(/\[作業費:[^\]]+\]/, '').replace(/\[手数料:[^\]]+\]/, '').trim();
+    document.getElementById('out-memo').value = memo;
+    document.querySelector('#t-out .btn-primary').textContent = '更新を保存（編集中：払出-' + d.id + '）';
+  }
+  toast('編集モードにしました。保存するとGASにも反映されます', 'ok');
+}
+
+function deleteEntry() {
+  if (!currentUID || !confirm('ローカルから削除します（GASは変わりません）')) return;
+  const data = load();
+  const idx = data.findIndex(r => String(r.uid) === String(currentUID));
+  if (idx < 0) return;
+  const removed = data.splice(idx, 1)[0];
+  if (isOutKubun(removed.kubun) && removed.linkedInId) {
+    const ii = data.findIndex(r => String(r.id) === String(removed.linkedInId) && isInKubun(r.kubun));
+    if (ii >= 0) { data[ii].sold = false; }
+  }
+  save(data);
+  closeModal(); updateNextIds(); updateHeaderCount(); renderList();
+  toast('削除しました', 'ok');
+}
+
+// ===== 払出フォーム：在庫選択肢 =====
+// 在庫一覧をキャッシュしておき、検索ボックスの入力に応じて選択肢を絞り込む
+let stockCache = [];
+
+function updateLinkedSelect() {
+  const all = load();
+  stockCache = all
+    .filter(d => isInKubun(d.kubun) && !all.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id)))
+    .map(d => {
+      const f = parseFeature(d.feature);
+      return { id: d.id, maker: f.maker || '', model: f.model || '', frame: f.frame || '', age: d.age || '', category: d.category || '' };
+    });
+  const searchEl = document.getElementById('out-linked-search');
+  if (searchEl) searchEl.value = '';
+  renderLinkedOptions();
+}
+
+function renderLinkedOptions() {
+  const sel = document.getElementById('out-linked');
+  const prevVal = sel.value;
+  const kw = (document.getElementById('out-linked-search')?.value || '').trim().toLowerCase();
+
+  const filtered = !kw ? stockCache : stockCache.filter(d => {
+    const hay = [d.id, d.maker, d.model, d.frame, d.age, d.category].join(' ').toLowerCase();
+    return hay.includes(kw);
+  });
+
+  sel.innerHTML = '<option value="">（紐付けなし）</option>' +
+    filtered.map(d => {
+      const label = [d.maker, d.model].filter(Boolean).join(' ');
+      const sub = [d.frame, d.age ? d.age + '年' : ''].filter(Boolean).join(' / ');
+      const tail = (sub ? '（' + sub + '）' : '') + (d.editing ? '（編集中）' : '');
+      return `<option value="${d.id}">${d.id} — ${label}${tail}</option>`;
+    }).join('');
+
+  // 直前に選択していた値がフィルタ後にも存在するなら復元する
+  if (prevVal && sel.querySelector('option[value="' + prevVal + '"]')) {
+    sel.value = prevVal;
+  }
+
+  const countEl = document.getElementById('out-linked-count');
+  if (countEl) {
+    countEl.textContent = kw
+      ? `${filtered.length} / ${stockCache.length} 件表示中`
+      : `在庫 ${stockCache.length} 件`;
+  }
+}
+
+// ===== 業者マスタ（固定4件） =====
+const PARTNERS = [
+  { label: 'モトレボ',  name: '株式会社 モトレボ 渡部伸正', address: '埼玉県所沢市中富280-3',         job: '古物商', age: '',   idMethod: '古物商同士の取引', idNo: '' },
+  { label: '山崎紅梅',  name: '山崎 紅梅',                  address: '埼玉県白岡市小久喜５５６番地１', job: '古物商', age: '50', idMethod: '古物商同士の取引', idNo: '431100033182' },
+  { label: '川田商事',  name: '有限会社 川田商事',           address: '埼玉県熊谷市日向250番地',       job: '古物商', age: '',   idMethod: '運転免許証',       idNo: '' },
+  { label: "A's Wing", name: "A's Wing",                   address: '',                              job: '古物商', age: '',   idMethod: '古物商同士の取引', idNo: '' }
+];
+
+function buildPartnerButtons() {
+  const c = document.getElementById('partner-btns');
+  if (!c) return;
+  c.innerHTML = PARTNERS.map((p, i) =>
+    `<button type="button" class="btn btn-secondary" id="pbtn-${i}" style="font-size:12px;padding:6px 12px" onclick="fillPartner(${i})">${p.label}</button>`
+  ).join('');
+}
+
+function fillPartner(idx) {
+  const p = PARTNERS[idx];
+  if (!p) return;
+  document.getElementById('in-name').value     = p.name;
+  document.getElementById('in-address').value  = p.address;
+  document.getElementById('in-job').value      = p.job;
+  document.getElementById('in-age2').value     = p.age;
+  document.getElementById('in-idMethod').value = p.idMethod;
+  document.getElementById('in-idNo').value     = p.idNo;
+  PARTNERS.forEach((_, i) => {
+    const b = document.getElementById('pbtn-' + i);
+    if (b) { b.style.borderColor = i===idx ? 'var(--accent)' : ''; b.style.color = i===idx ? 'var(--accent)' : ''; }
+  });
+}
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('out-linked').addEventListener('change', function() {
+    const val = this.value;
+    if (!val) return;
+    const rec = load().find(r => String(r.id) === String(val) && isInKubun(r.kubun));
+    if (!rec) return;
+    const f = parseFeature(rec.feature);
+    document.getElementById('out-category').value = rec.category || '';
+    document.getElementById('out-maker').value = f.maker;
+    document.getElementById('out-model').value = f.model;
+    document.getElementById('out-frame').value = f.frame;
+    document.getElementById('out-age').value = rec.age || '';
+  });
+  setToday();
+  updateNextIds();
+  updateHeaderCount();
+  buildPartnerButtons();
+  buildPlatformFeeButtons();
+});
+
+// ===== フォームクリア =====
+function v(id) { return (document.getElementById(id)?.value||'').trim(); }
+
+function clearIn() {
+  ['in-category','in-maker','in-model','in-frame','in-age','in-price','in-age2','in-idMethod','in-idNo','in-name','in-address','in-job','in-memo']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('in-qty').value='1';
+  document.getElementById('in-date').value = todayISO();
+  showInPrice();
+  if (editMode === 'in') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); }
+  document.querySelector('#t-in .btn-primary').textContent = 'GASに保存';
+}
+
+function clearOut() {
+  ['out-linked','out-linked-search','out-category','out-maker','out-model','out-frame','out-age','out-total','out-price','out-age2','out-idMethod','out-idNo','out-name','out-address','out-job','out-memo']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('out-qty').value='1';
+  document.getElementById('out-date').value = todayISO();
+  const feeEl = document.getElementById('out-platformfee');
+  if (feeEl) feeEl.value = '';
+  showPlatformFee();
+  calcOutPrice();
+  if (editMode === 'out') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); updateLinkedSelect(); }
+  else { renderLinkedOptions(); }
+  document.querySelector('#t-out .btn-primary').textContent = 'GASに保存';
+}
+
+function todayISO() { return new Date().toISOString().slice(0,10); }
+
+// GAS側のDate型セルがJSON化される際に "YYYY-MM-DDT00:00:00.000Z" 形式になることがあるため、
+// 取引日(date)欄をプレーンな "YYYY-MM-DD" に正規化する。
+// 時刻部分がちょうど UTC 0時の場合のみ安全にスライス変換できる（タイムゾーンによる日付ずれが起きない）。
+// それ以外の時刻が入っている場合は自動変換すると日付がずれる恐れがあるため、変換しない。
+function normalizeDateStr(s) {
+  if (typeof s !== 'string') return s;
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})T00:00:00\.000Z$/);
+  return m ? m[1] : s;
+}
+function setToday() {
+  document.getElementById('in-date').value = todayISO();
+  document.getElementById('out-date').value = todayISO();
+}
+
+// ===== 受入：金額表示 =====
+function showInPrice() {
+  const val = parseInt(document.getElementById('in-price').value.replace(/,/g,'')) || 0;
+  const el = document.getElementById('in-price-disp');
+  el.textContent = val ? '¥ ' + val.toLocaleString() : '';
+}
+
+// ===== 払出：金額表示 =====
+// 部品台帳ではサービス料金の内訳を持たないため、サービス行の追加・削除機能は不要。
+
+// 販売プラットフォームの手数料（合計金額に対する割合）
+// ※サービス料金（整備代等）とは別枠。物品の売却価格（本体金額）には一切影響させず、
+//   freee側で「支出・手数料」として別計上するための金額として保持するのみ。
+const PLATFORM_FEE_PRESETS = [
+  { label: 'メルカリ(10%)', rate: 0.10 },
+  { label: 'ジモティあんしん決済(5%)', rate: 0.05 }
+];
+
+function buildPlatformFeeButtons() {
+  const c = document.getElementById('platform-fee-btns');
+  if (!c) return;
+  c.innerHTML = PLATFORM_FEE_PRESETS.map((p, i) =>
+    `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="applyPlatformFee(${i})">＋ ${p.label}</button>`
+  ).join('');
+}
+
+function applyPlatformFee(idx) {
+  const p = PLATFORM_FEE_PRESETS[idx];
+  if (!p) return;
+  const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
+  const fee = Math.round(total * p.rate);
+  document.getElementById('out-platformfee').value = fee;
+  showPlatformFee();
+}
+
+function showPlatformFee() {
+  const val = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
+  const el = document.getElementById('disp-platformfee');
+  if (el) el.textContent = '¥ ' + val.toLocaleString();
+}
+
+function calcOutPrice() {
+  const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
+  document.getElementById('out-price').value = total || '';
+  const el = document.getElementById('out-total-disp');
+  if (el) el.textContent = total ? '¥ ' + total.toLocaleString() : '';
+}
+
+// 部品台帳ではサービス料金の内訳は持たない（常に空文字を返す）
+function getServiceMemo() {
+  return '';
+}
+
+// ===== 統計（在庫 = 紐付けのある払出を除いた受入） =====
+function updateStats() {
+  const d = load();
+  const inRecs = d.filter(r=>isInKubun(r.kubun));
+  const outRecs = d.filter(r=>isOutKubun(r.kubun));
+  const ic = inRecs.length;
+  const oc = outRecs.length;
+
+  const inAmount = inRecs.reduce((sum, r) => sum + (parseInt(r.price) || 0), 0);
+  // 払出は totalPrice（サービス料金込みの合計）があればそれを使う。なければ price で代替
+  const outAmount = outRecs.reduce((sum, r) => {
+    const t = parseInt(r.totalPrice);
+    return sum + (!isNaN(t) && t ? t : (parseInt(r.price) || 0));
+  }, 0);
+  // 作業費（サービス料金）合計と本体価格合計
+  const outServiceAmount = outRecs.reduce((sum, r) => sum + (parseInt(r.serviceFee) || 0), 0);
+  const outBodyAmount = outRecs.reduce((sum, r) => sum + (parseInt(r.price) || 0), 0);
+
+  // ===== 在庫件数・在庫金額 =====
+  // 「対応する受入番号」が紐付いている払出だけを、対応する受入から除外する。
+  // 紐付けのない払出（linkedInIdが空）は、どの受入品が売れたか特定できないため、
+  // 在庫の件数・金額には一切影響させない（在庫が不当に減らないようにする）。
+  const linkedInIds = new Set(
+    outRecs.map(r => r.linkedInId).filter(v => v !== undefined && v !== null && String(v).trim() !== '').map(v => String(v))
+  );
+  const stockRecs = inRecs.filter(r => !linkedInIds.has(String(r.id)));
+  const sc = stockRecs.length;
+  const stockAmount = stockRecs.reduce((sum, r) => sum + (parseInt(r.price) || 0), 0);
+
+  document.getElementById('s-in').textContent = ic;
+  document.getElementById('s-out').textContent = oc;
+  document.getElementById('s-stock').textContent = sc;
+  document.getElementById('s-total').textContent = d.length;
+  document.getElementById('s-in-amount').textContent = '¥' + inAmount.toLocaleString();
+  document.getElementById('s-stock-amount').textContent = '¥' + stockAmount.toLocaleString();
+  document.getElementById('s-out-amount').textContent = '¥' + outAmount.toLocaleString();
+  document.getElementById('s-out-service').textContent = '¥' + outServiceAmount.toLocaleString();
+  document.getElementById('s-out-body').textContent = '¥' + outBodyAmount.toLocaleString();
+}
+
+// ===== データ内訳・重複チェック =====
+function checkDataBreakdown() {
+  const data = load();
+  const box = document.getElementById('breakdownResult');
+  box.style.display = 'block';
+
+  // 区分ごとの件数
+  const byKubun = {};
+  data.forEach(r => {
+    const k = r.kubun || '(空)';
+    byKubun[k] = (byKubun[k] || 0) + 1;
+  });
+
+  // uid重複チェック
+  const uidCount = {};
+  data.forEach(r => {
+    const u = String(r.uid || '(uidなし)');
+    uidCount[u] = (uidCount[u] || 0) + 1;
+  });
+  const dupUids = Object.entries(uidCount).filter(([u,c]) => c > 1);
+
+  let out = '【総件数】' + data.length + '件\n\n【区分ごとの件数】\n';
+  Object.entries(byKubun).sort((a,b)=>b[1]-a[1]).forEach(([k,c]) => {
+    out += '  ' + k + ': ' + c + '件\n';
+  });
+  out += '\n【uid重複】\n';
+  if (dupUids.length) {
+    out += '  重複あり: ' + dupUids.length + '種類のuidが重複しています（合計' + dupUids.reduce((s,[,c])=>s+c,0) + '件分）\n';
+    dupUids.slice(0, 10).forEach(([u,c]) => { out += '    uid=' + u + ' が' + c + '件\n'; });
+    if (dupUids.length > 10) out += '    ...他' + (dupUids.length-10) + '種類\n';
+    document.getElementById('dupCleanupBtnWrap').style.display = 'block';
+  } else {
+    out += '  重複なし\n';
+    document.getElementById('dupCleanupBtnWrap').style.display = 'none';
+  }
+
+  const blanks = data.filter(r => !isInKubun(r.kubun) && !isOutKubun(r.kubun));
+  if (blanks.length) {
+    out += '\n【区分が受入・払出のいずれでもないデータ】 ' + blanks.length + '件\n';
+    out += '--- 先頭5件のサンプル ---\n';
+    blanks.slice(0, 5).forEach(r => {
+      out += JSON.stringify(r) + '\n';
+    });
+    box.textContent = out;
+    document.getElementById('cleanupBtnWrap').style.display = 'block';
+    window.__blankCount = blanks.length;
+  } else {
+    box.textContent = out;
+    document.getElementById('cleanupBtnWrap').style.display = 'none';
+  }
+}
+
+function removeBlankKubun() {
+  const data = load();
+  const blanks = data.filter(r => !isInKubun(r.kubun) && !isOutKubun(r.kubun));
+  if (!blanks.length) { toast('対象データなし', 'err'); return; }
+  if (!confirm('受入・払出のいずれでもないデータ ' + blanks.length + '件を削除します。\n削除前にバックアップを取ることを強く推奨します。よろしいですか？')) return;
+  const cleaned = data.filter(r => isInKubun(r.kubun) || isOutKubun(r.kubun));
+  save(cleaned);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+  document.getElementById('cleanupBtnWrap').style.display = 'none';
+  document.getElementById('breakdownResult').style.display = 'none';
+  toast(blanks.length + '件を削除しました（残り' + cleaned.length + '件）', 'ok');
+}
+
+// ===== uid重複の解消（各uidで最も古いcreatedAtの1件だけ残す） =====
+// 注意：ローカルのみの変更。GAS側にも反映する場合は、正しい方のデバイスで
+// 「ローカル全件をGASに上書き送信」を実行する必要がある（このアプリ単体では確認できない）。
+function removeDuplicateUids() {
+  const data = load();
+  const countByUid = {};
+  data.forEach(r => {
+    const u = String(r.uid || '');
+    if (u) countByUid[u] = (countByUid[u] || 0) + 1;
+  });
+  const dupUids = new Set(Object.keys(countByUid).filter(u => countByUid[u] > 1));
+  if (!dupUids.size) { toast('uidの重複はありません', 'err'); return; }
+
+  const totalDupRecords = Array.from(dupUids).reduce((s,u) => s + countByUid[u], 0);
+  if (!confirm('uidが重複している ' + dupUids.size + '種類・合計' + totalDupRecords + '件のうち、\n各uidで作成日時が最も古い1件のみを残し、残りを削除します。\n\n削除前に必ず「JSONバックアップ」でバックアップを取ってください。\nよろしいですか？')) return;
+
+  const kept = {};
+  const result = [];
+  data.forEach(r => {
+    const u = String(r.uid || '');
+    if (!dupUids.has(u)) { result.push(r); return; }
+    if (!kept[u]) {
+      kept[u] = r;
+      result.push(r);
+    } else {
+      const aTime = new Date(kept[u].createdAt || 0).getTime();
+      const bTime = new Date(r.createdAt || 0).getTime();
+      if (bTime < aTime) {
+        const idx = result.indexOf(kept[u]);
+        if (idx >= 0) result.splice(idx, 1);
+        result.push(r);
+        kept[u] = r;
+      }
+      // bTime >= aTime の場合はrを破棄（resultに追加しない）
+    }
+  });
+
+  const removedCount = data.length - result.length;
+  save(result);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+  document.getElementById('dupCleanupBtnWrap').style.display = 'none';
+  document.getElementById('breakdownResult').style.display = 'none';
+  toast(removedCount + '件の重複を削除しました（残り' + result.length + '件）', 'ok');
+}
+
+// ===== 取引日(date)の形式異常をチェック・修正 =====
+// GAS側のDate型セルがJSON化される際に "YYYY-MM-DDT00:00:00.000Z" 形式で
+// 返ってくることがあり、syncFromGASでそのままローカルに取り込まれると発生する。
+// 時刻部分がちょうどUTC0時のものだけ安全にYYYY-MM-DDへ自動変換し、
+// それ以外（タイムゾーン変換で日付がずれている可能性がある）は一覧表示して手動確認を促す。
+function fixDateFormats() {
+  const data = load();
+  const safePattern = /^(\d{4}-\d{2}-\d{2})T00:00:00\.000Z$/;
+  const anyTimePattern = /^\d{4}-\d{2}-\d{2}T/;
+  let fixed = 0;
+  const ambiguous = [];
+
+  data.forEach(r => {
+    if (typeof r.date === 'string') {
+      const m = r.date.match(safePattern);
+      if (m) {
+        r.date = m[1];
+        fixed++;
+      } else if (anyTimePattern.test(r.date)) {
+        ambiguous.push((isInKubun(r.kubun) ? '受入' : isOutKubun(r.kubun) ? '払出' : r.kubun) + '-' + (r.id || '') + '：' + r.date);
+      }
+    }
+  });
+
+  if (!fixed && !ambiguous.length) { toast('取引日の形式異常は見つかりませんでした', 'err'); return; }
+
+  if (fixed) {
+    if (!confirm(fixed + '件の取引日を「YYYY-MM-DDT00:00:00.000Z」形式から「YYYY-MM-DD」形式に書き換えます。\n削除ではなく書き換えですが、念のためバックアップを推奨します。よろしいですか？')) return;
+    save(data);
+    updateNextIds(); updateHeaderCount(); updateStats();
+    if (document.getElementById('t-list').classList.contains('active')) renderList();
+  }
+
+  let msg = fixed ? ('【自動修正】' + fixed + '件の取引日をYYYY-MM-DD形式に修正しました\n\n') : '';
+  if (ambiguous.length) {
+    msg += '【要確認】以下は時刻が00:00:00.000Zではないため自動変換していません\n（タイムゾーン換算で日付がずれている可能性があるため、内容を確認のうえ「編集」から手動で直してください）\n';
+    msg += ambiguous.slice(0, 15).join('\n');
+    if (ambiguous.length > 15) msg += '\n...他' + (ambiguous.length - 15) + '件';
+  }
+  const box = document.getElementById('breakdownResult');
+  box.style.display = 'block';
+  box.textContent = msg;
+
+  if (fixed && !ambiguous.length) toast(fixed + '件の取引日を修正しました', 'ok');
+  else if (ambiguous.length) toast('要確認の取引日が' + ambiguous.length + '件あります（下に一覧表示）', 'err');
+}
+
+// ===== 「払出（売渡）」の誤表記を「払出（売却）」に修正 =====
+// 過去のコードのバグにより、払出登録フォーム（見出しは「払出（売却）」）から保存したのに
+// 区分が「払出（売渡）」とハードコードされてしまっていたレコードを修正する。
+function fixUridashiKubun() {
+  const data = load();
+  const targets = data.filter(r => r.kubun === '払出（売渡）');
+
+  if (!targets.length) { toast('「払出（売渡）」のデータは見つかりませんでした', 'err'); return; }
+
+  const list = targets.map(r => '払出-' + (r.id || '（番号なし）') + '：' + (r.date || '') + '　' + (r.name || '')).join('\n');
+  if (!confirm('以下の' + targets.length + '件を「払出（売渡）」→「払出（売却）」に修正します。\n\n' + list + '\n\n念のためバックアップを推奨します。よろしいですか？')) return;
+
+  targets.forEach(r => { r.kubun = '払出（売却）'; });
+  save(data);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+
+  const box = document.getElementById('breakdownResult');
+  box.style.display = 'block';
+  box.textContent = '【修正完了】以下の' + targets.length + '件を「払出（売却）」に修正しました\n' + list;
+  toast(targets.length + '件を「払出（売却）」に修正しました', 'ok');
+}
+
+// ===== 受入⇔払出の自動紐付け（車台番号の完全一致で判定） =====
+let autoLinkCandidates = []; // [{outUid, inId}]
+
+function previewAutoLink() {
+  const data = load();
+  const inRecs = data.filter(d => isInKubun(d.kubun));
+  const outRecs = data.filter(d => isOutKubun(d.kubun));
+
+  // すでに対応受入番号が設定済み（かつその受入が実在する）払出は対象外。
+  // それ以外の受入idは「空いている」とみなして候補探索に使う。
+  const usedInIds = new Set(
+    outRecs
+      .filter(o => o.linkedInId && inRecs.some(i => String(i.id) === String(o.linkedInId)))
+      .map(o => String(o.linkedInId))
+  );
+
+  const candidates = [];   // 1対1で一意に決まったペア
+  const ambiguous = [];    // 同じ車台番号の受入が複数あり自動判定できない
+  const noMatch = [];      // 車台番号が空、または一致する受入が見つからない
+  const alreadyLinked = []; // すでに紐付け済み
+
+  outRecs.forEach(o => {
+    if (o.linkedInId && inRecs.some(i => String(i.id) === String(o.linkedInId))) {
+      alreadyLinked.push(o);
+      return;
+    }
+    const frameO = (parseFeature(o.feature).frame || '').trim().toUpperCase();
+    if (!frameO) { noMatch.push(o); return; }
+
+    const matches = inRecs.filter(i => {
+      if (usedInIds.has(String(i.id))) return false;
+      const frameI = (parseFeature(i.feature).frame || '').trim().toUpperCase();
+      return frameI === frameO;
+    });
+
+    if (matches.length === 1) {
+      candidates.push({ out: o, in: matches[0] });
+      usedInIds.add(String(matches[0].id)); // この回の探索内で同じ受入を二重に使わない
+    } else if (matches.length > 1) {
+      ambiguous.push({ out: o, matches });
+    } else {
+      noMatch.push(o);
+    }
+  });
+
+  autoLinkCandidates = candidates.map(c => ({ outUid: c.out.uid, inId: c.in.id }));
+
+  let msg = '【自動紐付けできる候補】' + candidates.length + '件\n';
+  candidates.slice(0, 50).forEach(c => {
+    const f = parseFeature(c.out.feature);
+    msg += '  払出-' + (c.out.id || '') + ' ⇔ 受入-' + (c.in.id || '') + '（車台番号：' + f.frame + '）\n';
+  });
+  if (candidates.length > 50) msg += '  ...他' + (candidates.length - 50) + '件\n';
+
+  msg += '\n【すでに紐付け済み】' + alreadyLinked.length + '件\n';
+
+  msg += '\n【車台番号が空、または一致する受入が見つからない】' + noMatch.length + '件\n';
+  noMatch.slice(0, 15).forEach(o => {
+    const f = parseFeature(o.feature);
+    msg += '  払出-' + (o.id || '') + '：' + [f.maker, f.model].filter(Boolean).join(' ') + '（車台番号：' + (f.frame || 'なし') + '）\n';
+  });
+  if (noMatch.length > 15) msg += '  ...他' + (noMatch.length - 15) + '件（同じ車台番号の受入が登録されていない可能性があります）\n';
+
+  msg += '\n【同じ車台番号の受入が複数あり自動判定できない】' + ambiguous.length + '件\n';
+  ambiguous.slice(0, 15).forEach(a => {
+    const f = parseFeature(a.out.feature);
+    msg += '  払出-' + (a.out.id || '') + '（車台番号：' + f.frame + '）の候補→ 受入-' + a.matches.map(m => m.id).join('、受入-') + '\n';
+  });
+  if (ambiguous.length > 15) msg += '  ...他' + (ambiguous.length - 15) + '件（編集画面から手動で紐付けてください）\n';
+
+  const box = document.getElementById('autoLinkResult');
+  box.style.display = 'block';
+  box.textContent = msg;
+
+  const wrap = document.getElementById('autoLinkApplyWrap');
+  if (candidates.length) {
+    wrap.style.display = 'block';
+    toast(candidates.length + '件の紐付け候補が見つかりました。内容を確認して適用してください', 'ok');
+  } else {
+    wrap.style.display = 'none';
+    toast('車台番号が一致する自動紐付け候補は見つかりませんでした', 'err');
+  }
+}
+
+function applyAutoLink() {
+  if (!autoLinkCandidates.length) { toast('紐付け候補がありません。先に「紐付け候補をチェック」を押してください', 'err'); return; }
+  if (!confirm(autoLinkCandidates.length + '件を車台番号の一致にもとづいて一括で紐付けます。\n（払出側の「対応する受入番号」を設定し、備考に[対応受入:N]タグを追加します）\n\n念のためバックアップを推奨します。よろしいですか？')) return;
+
+  const data = load();
+  const byUid = new Map(data.map(r => [String(r.uid), r]));
+  let applied = 0;
+
+  autoLinkCandidates.forEach(c => {
+    const o = byUid.get(String(c.outUid));
+    if (!o) return;
+    o.linkedInId = c.inId;
+    // 既存の[対応受入:xx]タグがあれば置き換え、なければ先頭に追加
+    if (/\[対応受入:[^\]]+\]/.test(o.memo || '')) {
+      o.memo = o.memo.replace(/\[対応受入:[^\]]+\]/, '[対応受入:' + c.inId + ']');
+    } else {
+      o.memo = '[対応受入:' + c.inId + ']' + (o.memo || '');
+    }
+    applied++;
+  });
+
+  save(data);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+
+  autoLinkCandidates = [];
+  document.getElementById('autoLinkApplyWrap').style.display = 'none';
+  const box = document.getElementById('autoLinkResult');
+  box.textContent = '【適用完了】' + applied + '件を紐付けました。\n「内訳・重複をチェック」やデータ管理の合計表示で反映を確認してください。';
+  toast(applied + '件を紐付けました', 'ok');
+}
+
+// ===== JSONバックアップ・復元 =====
+function exportBackupJSON() {
+  const data = load();
+  if (!data.length) { toast('データなし', 'err'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}));
+  a.download = '古物台帳_バックアップ_' + todayISO().replace(/-/g,'') + '_' + Date.now() + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('バックアップを保存しました（' + data.length + '件）', 'ok');
+}
+
+function importBackupJSON(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const restored = JSON.parse(e.target.result);
+      if (!Array.isArray(restored)) throw new Error('形式が不正です');
+      if (!confirm('現在のローカルデータ（' + load().length + '件）を、このバックアップ（' + restored.length + '件）で完全に置き換えます。よろしいですか？')) return;
+      save(restored);
+      updateNextIds(); updateHeaderCount(); updateStats();
+      if (document.getElementById('t-list').classList.contains('active')) renderList();
+      toast('バックアップから復元しました（' + restored.length + '件）', 'ok');
+    } catch (err) {
+      toast('復元に失敗しました: ' + err.message, 'err');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// ===== CSV =====
+function exportCSV(type) {
+  let data = load();
+  if (type==='受入') data = data.filter(d=>isInKubun(d.kubun));
+  else if (type==='払出') data = data.filter(d=>isOutKubun(d.kubun));
+  if (!data.length) { toast('データなし','err'); return; }
+  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee','platformFee'];
+  const csv = [keys.join(','), ...data.map(d=>keys.map(k=>'"'+String(d[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download = '古物台帳_'+type+'_'+todayISO().replace(/-/g,'')+'.csv';
+  a.click();
+}
+
+// ===== ID整理：受入・払出を取引年月日の古い順に1から振り直す =====
+function renumberIds() {
+  const data = load();
+  if (!data.length) { toast('データなし', 'err'); return; }
+  if (!confirm('受入・払出のIDを取引年月日の古い順に1から振り直します。\nローカルのみの変更です。よろしいですか？')) return;
+
+  const sortKey = r => {
+    const n = parseInt(r.id, 10);
+    return (r.date || '') + 'T' + String(isNaN(n) ? 999999 : n).padStart(6, '0');
+  };
+
+  const ins = data.filter(r => isInKubun(r.kubun)).sort((a,b) => sortKey(a) < sortKey(b) ? -1 : 1);
+  const outs = data.filter(r => isOutKubun(r.kubun)).sort((a,b) => sortKey(a) < sortKey(b) ? -1 : 1);
+  const others = data.filter(r => !isInKubun(r.kubun) && !isOutKubun(r.kubun));
+
+  const oldToNewIn = {};
+  ins.forEach((r, i) => { oldToNewIn[String(r.id)] = i + 1; r.id = i + 1; });
+  outs.forEach((r, i) => {
+    r.id = i + 1;
+    if (r.linkedInId && oldToNewIn[String(r.linkedInId)] !== undefined) {
+      const newLinked = oldToNewIn[String(r.linkedInId)];
+      if (r.memo) {
+        r.memo = r.memo.replace(/\[対応受入:[^\]]+\]/, '[対応受入:' + newLinked + ']');
+      }
+      r.linkedInId = String(newLinked);
+    }
+  });
+
+  save([...ins, ...outs, ...others]);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+  toast('ID整理が完了しました（受入' + ins.length + '件・払出' + outs.length + '件）', 'ok');
+}
+
+function clearLocal() {
+  if (!confirm('ローカルデータを全削除します。GASは変わりません。')) return;
+  localStorage.removeItem(LS);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  toast('削除しました','ok');
+}
+
+// ===== UI helpers =====
+function setSyncBox(msg, cls) {
+  const el = document.getElementById('syncBox');
+  el.textContent = msg;
+  el.className = 'sync-box' + (cls?' '+cls:'');
+}
+
+function showLoad(on, text) {
+  const el = document.getElementById('loading');
+  el.className = 'loading' + (on ? ' show' : '');
+  if (text) { const s = el.querySelector('span'); if (s) s.textContent = text; }
+  else { const s = el.querySelector('span'); if (s) s.textContent = '処理中...'; }
+}
+
+let toastT;
+function toast(msg, type) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='show'+(type?' '+type:'');
+  clearTimeout(toastT); toastT=setTimeout(()=>{el.className=''},3000);
+}
+</script>
+</body>
+</html>
