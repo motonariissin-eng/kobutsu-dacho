@@ -431,6 +431,7 @@
     <div class="btn-group" style="margin-top:8px">
       <button class="btn" onclick="fixDateFormats()">取引日の形式異常をチェック・修正</button>
       <button class="btn" onclick="fixUridashiKubun()">「払出（売渡）」を「払出（売却）」に修正</button>
+      <button class="btn" onclick="fixMakerTypos()">メーカー表記ゆれを一括修正（SUZIKI→SUZUKI等）</button>
     </div>
   </div>
 
@@ -1652,6 +1653,55 @@ function fixUridashiKubun() {
   toast(targets.length + '件を「払出（売却）」に修正しました', 'ok');
 }
 
+// ===== メーカー表記ゆれの一括修正（SUZIKI→SUZUKI など） =====
+// メーカー欄（featureの1行目）が誤表記のものを、正しい表記へ一括置換する。
+// 修正後はGASにも反映（gasPostで各レコードをupsert）する。
+const MAKER_TYPO_FIXES = [
+  ['SUZIKI', 'SUZUKI'],
+];
+
+function fixMakerTypos() {
+  const data = load();
+  const targets = [];
+
+  data.forEach(r => {
+    const f = parseFeature(r.feature);
+    const fix = MAKER_TYPO_FIXES.find(([wrong]) => f.maker === wrong);
+    if (fix) targets.push({ rec: r, from: fix[0], to: fix[1] });
+  });
+
+  if (!targets.length) { toast('メーカー表記ゆれのデータは見つかりませんでした', 'err'); return; }
+
+  const list = targets.map(t => (isOutKubun(t.rec.kubun) ? '払出-' : '受入-') + (t.rec.id || '（番号なし）') + '：' + (t.rec.date || '') + '　' + t.from + '→' + t.to).join('\n');
+  if (!confirm('以下の' + targets.length + '件のメーカー表記を修正します。\n\n' + list + '\n\n念のためバックアップを推奨します。よろしいですか？')) return;
+
+  targets.forEach(t => {
+    const f = parseFeature(t.rec.feature);
+    f.maker = t.to;
+    t.rec.feature = buildFeature(f.maker, f.model, f.frame);
+  });
+  save(data);
+  updateNextIds(); updateHeaderCount(); updateStats();
+  if (document.getElementById('t-list').classList.contains('active')) renderList();
+  buildPartnerButtons();
+
+  const box = document.getElementById('breakdownResult');
+  box.style.display = 'block';
+  box.textContent = '【修正完了】以下の' + targets.length + '件のメーカー表記を修正しました\n' + list + '\n\nGASへ反映中...';
+  toast(targets.length + '件のメーカー表記を修正しました。GASへ反映中...', 'ok');
+
+  let doneCount = 0;
+  targets.forEach(t => {
+    gasPost(t.rec, function () {
+      doneCount++;
+      if (doneCount === targets.length) {
+        box.textContent = '【修正完了】以下の' + targets.length + '件のメーカー表記を修正しました（GAS反映済み）\n' + list;
+        toast('GASへの反映が完了しました', 'ok');
+      }
+    });
+  });
+}
+
 // ===== 受入⇔払出の自動紐付け（車台番号の完全一致で判定） =====
 let autoLinkCandidates = []; // [{outUid, inId}]
 
@@ -1915,12 +1965,20 @@ function fmtDateSlash(iso) {
   return p.length === 3 ? (parseInt(p[1]) + '/' + parseInt(p[2])) : iso;
 }
 
+// 売上金額：totalPrice（合計金額）が入っていればそれを、無ければ本体価格（price）を使う。
+// ※過去データはtotalPrice欄が使われる前に登録されたものが多く、priceのみに金額が入っている。
+function salesAmount(d) {
+  const t = parseInt(d.totalPrice) || 0;
+  if (t > 0) return t;
+  return parseInt(d.price) || 0;
+}
+
 // ---- CSV①：売上登録用 ----
 function getSalesJournalTargets() {
   const from = v('sales-from');
   const to = v('sales-to');
   return load()
-    .filter(d => isOutKubun(d.kubun) && (parseInt(d.totalPrice) || 0) > 0)
+    .filter(d => isOutKubun(d.kubun) && salesAmount(d) > 0)
     .filter(d => (!from || d.date >= from) && (!to || d.date <= to))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
 }
@@ -1932,7 +1990,7 @@ function previewSalesJournal() {
 
   let sumSales = 0, sumFee = 0;
   const rows = data.map(d => {
-    const sales = parseInt(d.totalPrice) || 0;
+    const sales = salesAmount(d);
     const fee = parseInt(d.platformFee) || 0;
     sumSales += sales; sumFee += fee;
     return `<tr>
@@ -1974,7 +2032,7 @@ function exportSalesJournalCSV() {
   const rows = [];
   let denpyoSeq = 1;
   data.forEach(d => {
-    const sales = parseInt(d.totalPrice) || 0;
+    const sales = salesAmount(d);
     const fee = parseInt(d.platformFee) || 0;
     const item = d.feature || '';
     const no = 'URI-' + (d.id || denpyoSeq);
@@ -1996,7 +2054,7 @@ function exportSalesJournalCSV() {
 // ---- CSV②：出金登録用 ----
 function getPayoutPendingTargets() {
   return load()
-    .filter(d => isOutKubun(d.kubun) && (parseInt(d.totalPrice) || 0) > 0 && !d.payoutDone)
+    .filter(d => isOutKubun(d.kubun) && salesAmount(d) > 0 && !d.payoutDone)
     .sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
@@ -2015,7 +2073,7 @@ function renderPayoutPendingList() {
         <th style="padding:4px 8px;text-align:right">未収入金</th>
       </tr></thead>
       <tbody>${data.map(d => {
-        const receivable = (parseInt(d.totalPrice) || 0) - (parseInt(d.platformFee) || 0);
+        const receivable = salesAmount(d) - (parseInt(d.platformFee) || 0);
         return `<tr>
           <td style="padding:4px 8px;border-bottom:1px solid var(--border)"><input type="checkbox" class="pd-check" value="${d.uid}" data-amt="${receivable}" checked onchange="updatePayoutDiff()"></td>
           <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.date}</td>
