@@ -426,7 +426,6 @@
     </div>
     <div class="btn-group" style="margin-top:8px">
       <button class="btn" onclick="fixDateFormats()">取引日の形式異常をチェック・修正</button>
-      <button class="btn" onclick="fixUridashiKubun()">「払出（売渡）」を「払出（売却）」に修正</button>
     </div>
   </div>
 
@@ -1406,8 +1405,17 @@ function selectBikeRefByIndex(i) {
   showInPrice();
   const item = (r.feature || '').replace(/\n/g, ' ');
   applyOriginMemo('[由来:バイク付属][対応バイク受入:' + r.id + '] バイク台帳 受入-' + r.id + (item ? '（' + item + '）' : '') + ' に付属');
+
+  // 相手方情報も引用（バイク受入時の取引相手＝この部品の出所と同一人物のため）
+  document.getElementById('in-name').value = r.name || '';
+  document.getElementById('in-address').value = r.address || '';
+  document.getElementById('in-job').value = r.job || '';
+  document.getElementById('in-age2').value = r.age || '';
+  document.getElementById('in-idMethod').value = r.idMethod || '';
+  document.getElementById('in-idNo').value = r.idNo || '';
+
   closeBikeRefModal();
-  toast('取得価格を0円にし、引用元を備考に記載しました', 'ok');
+  toast('取得価格を0円にし、引用元・相手方情報を反映しました', 'ok');
 }
 
 // ===== 払出：金額表示 =====
@@ -1653,29 +1661,6 @@ function fixDateFormats() {
 
   if (fixed && !ambiguous.length) toast(fixed + '件の取引日を修正しました', 'ok');
   else if (ambiguous.length) toast('要確認の取引日が' + ambiguous.length + '件あります（下に一覧表示）', 'err');
-}
-
-// ===== 「払出（売渡）」の誤表記を「払出（売却）」に修正 =====
-// 過去のコードのバグにより、払出登録フォーム（見出しは「払出（売却）」）から保存したのに
-// 区分が「払出（売渡）」とハードコードされてしまっていたレコードを修正する。
-function fixUridashiKubun() {
-  const data = load();
-  const targets = data.filter(r => r.kubun === '払出（売渡）');
-
-  if (!targets.length) { toast('「払出（売渡）」のデータは見つかりませんでした', 'err'); return; }
-
-  const list = targets.map(r => '払出-' + (r.id || '（番号なし）') + '：' + (r.date || '') + '　' + (r.name || '')).join('\n');
-  if (!confirm('以下の' + targets.length + '件を「払出（売渡）」→「払出（売却）」に修正します。\n\n' + list + '\n\n念のためバックアップを推奨します。よろしいですか？')) return;
-
-  targets.forEach(r => { r.kubun = '払出（売却）'; });
-  save(data);
-  updateNextIds(); updateHeaderCount(); updateStats();
-  if (document.getElementById('t-list').classList.contains('active')) renderList();
-
-  const box = document.getElementById('breakdownResult');
-  box.style.display = 'block';
-  box.textContent = '【修正完了】以下の' + targets.length + '件を「払出（売却）」に修正しました\n' + list;
-  toast(targets.length + '件を「払出（売却）」に修正しました', 'ok');
 }
 
 // ===== 受入⇔払出の自動紐付け（車台番号の完全一致で判定） =====
