@@ -430,8 +430,6 @@
     </div>
     <div class="btn-group" style="margin-top:8px">
       <button class="btn" onclick="fixDateFormats()">取引日の形式異常をチェック・修正</button>
-      <button class="btn" onclick="fixUridashiKubun()">「払出（売渡）」を「払出（売却）」に修正</button>
-      <button class="btn" onclick="fixMakerTypos()">メーカー表記ゆれを一括修正（SUZIKI→SUZUKI等）</button>
     </div>
   </div>
 
@@ -1630,78 +1628,6 @@ function fixDateFormats() {
   else if (ambiguous.length) toast('要確認の取引日が' + ambiguous.length + '件あります（下に一覧表示）', 'err');
 }
 
-// ===== 「払出（売渡）」の誤表記を「払出（売却）」に修正 =====
-// 過去のコードのバグにより、払出登録フォーム（見出しは「払出（売却）」）から保存したのに
-// 区分が「払出（売渡）」とハードコードされてしまっていたレコードを修正する。
-function fixUridashiKubun() {
-  const data = load();
-  const targets = data.filter(r => r.kubun === '払出（売渡）');
-
-  if (!targets.length) { toast('「払出（売渡）」のデータは見つかりませんでした', 'err'); return; }
-
-  const list = targets.map(r => '払出-' + (r.id || '（番号なし）') + '：' + (r.date || '') + '　' + (r.name || '')).join('\n');
-  if (!confirm('以下の' + targets.length + '件を「払出（売渡）」→「払出（売却）」に修正します。\n\n' + list + '\n\n念のためバックアップを推奨します。よろしいですか？')) return;
-
-  targets.forEach(r => { r.kubun = '払出（売却）'; });
-  save(data);
-  updateNextIds(); updateHeaderCount(); updateStats();
-  if (document.getElementById('t-list').classList.contains('active')) renderList();
-
-  const box = document.getElementById('breakdownResult');
-  box.style.display = 'block';
-  box.textContent = '【修正完了】以下の' + targets.length + '件を「払出（売却）」に修正しました\n' + list;
-  toast(targets.length + '件を「払出（売却）」に修正しました', 'ok');
-}
-
-// ===== メーカー表記ゆれの一括修正（SUZIKI→SUZUKI など） =====
-// メーカー欄（featureの1行目）が誤表記のものを、正しい表記へ一括置換する。
-// 修正後はGASにも反映（gasPostで各レコードをupsert）する。
-const MAKER_TYPO_FIXES = [
-  ['SUZIKI', 'SUZUKI'],
-];
-
-function fixMakerTypos() {
-  const data = load();
-  const targets = [];
-
-  data.forEach(r => {
-    const f = parseFeature(r.feature);
-    const fix = MAKER_TYPO_FIXES.find(([wrong]) => f.maker === wrong);
-    if (fix) targets.push({ rec: r, from: fix[0], to: fix[1] });
-  });
-
-  if (!targets.length) { toast('メーカー表記ゆれのデータは見つかりませんでした', 'err'); return; }
-
-  const list = targets.map(t => (isOutKubun(t.rec.kubun) ? '払出-' : '受入-') + (t.rec.id || '（番号なし）') + '：' + (t.rec.date || '') + '　' + t.from + '→' + t.to).join('\n');
-  if (!confirm('以下の' + targets.length + '件のメーカー表記を修正します。\n\n' + list + '\n\n念のためバックアップを推奨します。よろしいですか？')) return;
-
-  targets.forEach(t => {
-    const f = parseFeature(t.rec.feature);
-    f.maker = t.to;
-    t.rec.feature = buildFeature(f.maker, f.model, f.frame);
-  });
-  save(data);
-  updateNextIds(); updateHeaderCount(); updateStats();
-  if (document.getElementById('t-list').classList.contains('active')) renderList();
-  buildPartnerButtons();
-
-  const box = document.getElementById('breakdownResult');
-  box.style.display = 'block';
-  box.textContent = '【修正完了】以下の' + targets.length + '件のメーカー表記を修正しました\n' + list + '\n\nGASへ反映中...';
-  toast(targets.length + '件のメーカー表記を修正しました。GASへ反映中...', 'ok');
-
-  let doneCount = 0;
-  targets.forEach(t => {
-    gasPost(t.rec, function () {
-      doneCount++;
-      if (doneCount === targets.length) {
-        box.textContent = '【修正完了】以下の' + targets.length + '件のメーカー表記を修正しました（GAS反映済み）\n' + list;
-        toast('GASへの反映が完了しました', 'ok');
-      }
-    });
-  });
-}
-
 // ===== 受入⇔払出の自動紐付け（車台番号の完全一致で判定） =====
 let autoLinkCandidates = []; // [{outUid, inId}]
 
@@ -2033,23 +1959,34 @@ function previewSalesJournal() {
     </div>`;
 }
 
+// freeeの「他社会計ソフトインポート」は日付が YYYY/MM/DD（スラッシュ区切り）である必要がある
+function fmtDateSlashFull(iso) {
+  if (!iso) return '';
+  const p = iso.split('-');
+  return p.length === 3 ? p.join('/') : iso;
+}
+
 function exportSalesJournalCSV() {
   const data = getSalesJournalTargets();
   if (!data.length) { toast('対象データがありません', 'err'); return; }
 
   // freee「仕訳インポート（他社会計ソフトインポート＝振替伝票）」用の列形式。
-  // 伝票No.が同じ行は1つの仕訳としてまとめてインポートされる。
-  const header = ['伝票No', '日付', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '取引先', '摘要'];
+  // ・1列目は freee の必須マーカー列：ヘッダ行は[表題行]、データ行は[明細行]を入れないと
+  //   freee側が仕訳データとして認識せず「このファイル形式はインポートできません」となる。
+  // ・伝票番号が同じ行は1つの仕訳としてまとめてインポートされる（半角数字20桁以内で指定）。
+  // ・日付はYYYY/MM/DD形式が必須（YYYY-MM-DDのハイフン区切りは不可）。
+  const header = ['[表題行]', '日付', '伝票番号', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '取引先', '摘要'];
   const rows = [];
   let denpyoSeq = 1;
   data.forEach(d => {
     const sales = salesAmount(d);
     const fee = parseInt(d.platformFee) || 0;
     const item = (d.feature || '').replace(/\n/g, ' ');
-    const no = 'URI-' + (d.id || denpyoSeq);
-    rows.push([no, d.date, '未収入金', '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]);
+    const dateSlash = fmtDateSlashFull(d.date);
+    const no = String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号は半角数字のみ
+    rows.push(['[明細行]', dateSlash, no, '未収入金', '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]);
     if (fee > 0) {
-      rows.push([no, d.date, '支払手数料', '課対仕入10%', fee, '未収入金', '', fee, d.name || '', 'プラットフォーム手数料：' + item]);
+      rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '未収入金', '', fee, d.name || '', 'プラットフォーム手数料：' + item]);
     }
     denpyoSeq++;
   });
@@ -2144,13 +2081,16 @@ function exportPayoutJournalCSV() {
   }
 
   // freee「仕訳インポート（振替伝票）」用の1伝票（借方2行・貸方1行）
-  const no = 'DEP-' + payoutDate.replace(/-/g, '');
-  const header = ['伝票No', '日付', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '摘要'];
+  // 1列目の[表題行]/[明細行]マーカーが無いとfreeeがファイル形式を認識できないため必須。
+  // 伝票番号は半角数字のみ（YYYYMMDD）。日付はYYYY/MM/DD形式が必須。
+  const no = payoutDate.replace(/-/g, '');
+  const dateSlash = fmtDateSlashFull(payoutDate);
+  const header = ['[表題行]', '日付', '伝票番号', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '摘要'];
   const rows = [
-    [no, payoutDate, '普通預金', '', bank, '', '', '', 'ウォレットからの振込入金'],
+    ['[明細行]', dateSlash, no, '普通預金', '', bank, '', '', '', 'ウォレットからの振込入金'],
   ];
-  if (fee > 0) rows.push([no, payoutDate, '支払手数料', '課対仕入10%', fee, '', '', '', '振込手数料']);
-  rows.push([no, payoutDate, '', '', '', '未収入金', '', receivableTotal, '未収入金の取り崩し']);
+  if (fee > 0) rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '', '', '', '振込手数料']);
+  rows.push(['[明細行]', dateSlash, no, '', '', '', '未収入金', '', receivableTotal, '未収入金の取り崩し']);
 
   downloadCSV(header, rows, '出金登録_freee用_' + payoutDate.replace(/-/g, '') + '.csv');
 
