@@ -481,15 +481,30 @@
   </div>
 </div>
 
+<!-- バイク本体台帳の受入を検索して引用するモーダル -->
+<div class="overlay" id="bikeRefOverlay" onclick="closeBikeRefModal(event)">
+  <div class="modal">
+    <h3>バイク本体台帳から受入を選択</h3>
+    <div class="field"><input type="text" id="bikeRefSearch" placeholder="車名・メーカー・車台番号・受入番号で検索" oninput="renderBikeRefList()"></div>
+    <div id="bikeRefStatus" style="font-size:12px;color:var(--text2);margin-bottom:8px">読み込み中...</div>
+    <div id="bikeRefList" style="max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+    <div class="btn-group" style="margin-top:14px">
+      <button class="btn btn-secondary" onclick="closeBikeRefModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <div class="loading" id="loading"><span>処理中...</span></div>
 <div id="toast"></div>
 
 <script>
-// ⚠ バイク部品台帳は車両台帳とは別データとして管理するため、保存先（GASのスプレッドシート）も
-//    別のものを用意し、下記URLを差し替えてください（同じシートに混在させると車両/部品の区別が
-//    つかなくなるため非推奨）。差し替えるまでは車両台帳と同じGASを暫定的に指しています。
+// 部品台帳専用のGAS（車両台帳とは別のスプレッドシート）
 const GAS = 'https://script.google.com/macros/s/AKfycbzbR0hubVD_B0bJSyxLUe1bhxYkFBFU_UhzuulJNqB_WjMJ9DHSnMJ1E5l2oCjLwdlu/exec';
 const LS = 'kobutu_parts_v1';
+
+// バイク本体台帳（index.html）のGAS。読み取り専用で使い、
+// 「バイクに付属していた」部品の受入元を検索・引用するためだけに使用する（部品台帳側からの書き込みは行わない）。
+const BIKE_GAS = 'https://script.google.com/macros/s/AKfycbyzPq8wPrhrlkNExoz0vppHMnbwMZxMxUhtsBo9hGt2gMr54FyHhkm77ywET7hOB0Zi/exec';
 
 // ===== ローカルストレージ =====
 function load() { try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e) { return []; } }
@@ -1304,29 +1319,95 @@ function showInPrice() {
 
 // ===== 受入：仕入を伴わない取得（バイク付属／無償譲受）のクイック入力 =====
 // 対価の授受がないため取得価格は0円とし、備考に出所（由来）を明記する。
-// 「バイク付属」の場合は、参照元となるバイク本体台帳の受入番号を任意で聞き、
-// 手入力でも後から追跡できるようテキストとして備考に残す（台帳間の自動連携は行わない）。
+// 「バイク付属」の場合は、BIKE_GAS（バイク本体台帳・読み取り専用）に問い合わせて
+// 実際の受入レコードを検索・選択できるようにし、番号の記憶違いを防ぐ。
+let bikeRefCache = null; // { list: [...], fetchedAt: Date } 検索モーダルを開くたびに再取得する
+
 function quickOrigin(type) {
-  document.getElementById('in-price').value = '0';
-  showInPrice();
-
-  const memoEl = document.getElementById('in-memo');
-  let note = '';
-
   if (type === 'attached') {
-    const ref = (prompt('参照するバイク本体台帳の受入番号があれば入力してください（空欄可）\n例：12') || '').trim();
-    note = '[由来:バイク付属]' + (ref ? ' バイク台帳 受入-' + ref + ' に付属' : '');
-  } else if (type === 'gift') {
-    note = '[由来:無償譲受]';
-  } else {
+    openBikeRefModal();
     return;
   }
+  if (type === 'gift') {
+    document.getElementById('in-price').value = '0';
+    showInPrice();
+    applyOriginMemo('[由来:無償譲受]');
+    toast('取得価格を0円にし、由来を備考に記載しました', 'ok');
+  }
+}
 
-  // 既存の同種タグがあれば置き換え、なければ先頭に追加
+// 既存の[由来:...]タグがあれば置き換え、なければ備考の先頭に追加する
+function applyOriginMemo(note) {
+  const memoEl = document.getElementById('in-memo');
   const re = /\[由来:[^\]]*\][^\n]*/;
   const current = memoEl.value || '';
   memoEl.value = re.test(current) ? current.replace(re, note) : (note + (current ? '\n' + current : ''));
-  toast('取得価格を0円にし、由来を備考に記載しました', 'ok');
+}
+
+function openBikeRefModal() {
+  document.getElementById('bikeRefOverlay').classList.add('open');
+  document.getElementById('bikeRefSearch').value = '';
+  document.getElementById('bikeRefStatus').textContent = '読み込み中...';
+  document.getElementById('bikeRefList').innerHTML = '';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  fetch(BIKE_GAS, { signal: controller.signal })
+    .then(r => r.json())
+    .then(res => {
+      clearTimeout(timer);
+      if (!res || !Array.isArray(res.entries)) {
+        document.getElementById('bikeRefStatus').textContent = 'バイク本体台帳の取得に失敗しました: ' + (res?.message || JSON.stringify(res));
+        return;
+      }
+      bikeRefCache = res.entries
+        .filter(r => r.kubun && r.kubun.includes('受入'))
+        .sort((a, b) => (a.date < b.date ? 1 : -1));
+      document.getElementById('bikeRefStatus').textContent = bikeRefCache.length + '件の受入があります（検索して選択してください）';
+      renderBikeRefList();
+    })
+    .catch(err => {
+      clearTimeout(timer);
+      document.getElementById('bikeRefStatus').textContent = err && err.name === 'AbortError' ? 'タイムアウトしました' : 'バイク本体台帳への接続に失敗しました';
+    });
+}
+
+function closeBikeRefModal(e) {
+  if (e && e.target !== e.currentTarget) return; // オーバーレイの背景クリックのみ閉じる（モーダル内クリックは無視）
+  document.getElementById('bikeRefOverlay').classList.remove('open');
+}
+
+let currentBikeRefFiltered = [];
+
+function renderBikeRefList() {
+  const wrap = document.getElementById('bikeRefList');
+  if (!bikeRefCache) return;
+  const kw = (document.getElementById('bikeRefSearch').value || '').trim().toLowerCase();
+  const filtered = !kw ? bikeRefCache : bikeRefCache.filter(r => {
+    const hay = [r.id, r.date, r.feature, r.name].filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(kw);
+  });
+  currentBikeRefFiltered = filtered.slice(0, 100);
+
+  if (!currentBikeRefFiltered.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">該当する受入が見つかりません</p>'; return; }
+
+  wrap.innerHTML = currentBikeRefFiltered.map((r, i) => `
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;font-size:12px" onclick="selectBikeRefByIndex(${i})">
+      <div><b>受入-${r.id}</b>　${r.date || ''}</div>
+      <div style="color:var(--text2);margin-top:2px">${(r.feature||'').replace(/\n/g,' ') || '（品名なし）'}</div>
+    </div>
+  `).join('');
+}
+
+function selectBikeRefByIndex(i) {
+  const r = currentBikeRefFiltered[i];
+  if (!r) return;
+  document.getElementById('in-price').value = '0';
+  showInPrice();
+  const item = (r.feature || '').replace(/\n/g, ' ');
+  applyOriginMemo('[由来:バイク付属][対応バイク受入:' + r.id + '] バイク台帳 受入-' + r.id + (item ? '（' + item + '）' : '') + ' に付属');
+  closeBikeRefModal();
+  toast('取得価格を0円にし、引用元を備考に記載しました', 'ok');
 }
 
 // ===== 払出：金額表示 =====
