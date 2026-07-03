@@ -1973,6 +1973,17 @@ function salesAmount(d) {
   return parseInt(d.price) || 0;
 }
 
+// freeeの「仕訳インポート（他社会計ソフトインポート＝振替伝票）」はCSVアップロードのみ対応（xlsx不可）のため、
+// このヘルパーで実CSV（UTF-8 BOM付き）を出力する。
+function downloadCSV(header, rows, filename) {
+  const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const csv = [header.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = filename;
+  a.click();
+}
+
 // ---- CSV①：売上登録用 ----
 function getSalesJournalTargets() {
   const from = v('sales-from');
@@ -2034,7 +2045,7 @@ function exportSalesJournalCSV() {
   data.forEach(d => {
     const sales = salesAmount(d);
     const fee = parseInt(d.platformFee) || 0;
-    const item = d.feature || '';
+    const item = (d.feature || '').replace(/\n/g, ' ');
     const no = 'URI-' + (d.id || denpyoSeq);
     rows.push([no, d.date, '未収入金', '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]);
     if (fee > 0) {
@@ -2043,12 +2054,8 @@ function exportSalesJournalCSV() {
     denpyoSeq++;
   });
 
-  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  ws['!cols'] = [10, 10, 14, 14, 10, 14, 14, 10, 14, 30].map(w => ({ wch: w }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '売上登録');
-  XLSX.writeFile(wb, '売上登録_freee用_' + todayISO().replace(/-/g, '') + '.xlsx');
-  toast(data.length + '件（' + rows.length + '行）のfreee用xlsxを出力しました', 'ok');
+  downloadCSV(header, rows, '売上登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
+  toast(data.length + '件（' + rows.length + '行）のfreee用CSVを出力しました', 'ok');
 }
 
 // ---- CSV②：出金登録用 ----
@@ -2145,11 +2152,7 @@ function exportPayoutJournalCSV() {
   if (fee > 0) rows.push([no, payoutDate, '支払手数料', '課対仕入10%', fee, '', '', '', '振込手数料']);
   rows.push([no, payoutDate, '', '', '', '未収入金', '', receivableTotal, '未収入金の取り崩し']);
 
-  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  ws['!cols'] = [12, 10, 14, 14, 10, 14, 14, 10, 24].map(w => ({ wch: w }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '出金登録');
-  XLSX.writeFile(wb, '出金登録_freee用_' + payoutDate.replace(/-/g, '') + '.xlsx');
+  downloadCSV(header, rows, '出金登録_freee用_' + payoutDate.replace(/-/g, '') + '.csv');
 
   // 選択した売却レコードを「出金済」にマークしてローカル保存＋GAS反映
   const all = load();
