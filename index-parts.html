@@ -252,6 +252,14 @@
       </div>
     </div>
 
+    <div class="field" style="border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--surface2)">
+      <label>送料・梱包費（売却価格には影響しません・freeeで「荷造運賃」として計上）</label>
+      <input type="text" inputmode="numeric" id="out-shipping" placeholder="0" oninput="showShippingFee()">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-top:6px">
+        <span>送料額</span><span id="disp-shipping">¥ 0</span>
+      </div>
+    </div>
+
     <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="out-name"></div>
     <div class="field"><label>住所</label><input type="text" id="out-address"></div>
     <div class="field"><label>職業</label><input type="text" id="out-job"></div>
@@ -641,16 +649,19 @@ function submitOut() {
   const bodyPrice = totalPrice;
   const serviceFee = 0;
   const platformFee = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
+  const shipping = parseInt((document.getElementById('out-shipping')?.value||'').replace(/,/g,'')) || 0;
   const serviceMemo = '';
 
   // memoに付帯情報を埋め込み（後で正規表現で抽出できる形式）
   // ※[手数料:xxx] はプラットフォーム手数料。サービス料金（[作業費:xxx]）とは別物で、
   //   物品の売却価格（本体金額/price）の計算には一切含めていない。
+  // ※[送料:xxx] は発送用の送料・梱包費。freeeでは「荷造運賃」として別仕訳で計上する。
   const metaTags = [];
   if (linkedInId) metaTags.push('[対応受入:' + linkedInId + ']');
   if (totalPrice) metaTags.push('[合計金額:' + totalPrice + ']');
   if (serviceFee) metaTags.push('[作業費:' + serviceFee + ']');
   if (platformFee) metaTags.push('[手数料:' + platformFee + ']');
+  if (shipping) metaTags.push('[送料:' + shipping + ']');
   const fullMemo = [metaTags.join(''), v('out-memo'), serviceMemo].filter(Boolean).join(' ');
 
   const rec = {
@@ -671,11 +682,12 @@ function submitOut() {
     memo: fullMemo,
     sold: (isEditing && existing) ? existing.sold : false,
     createdAt: (isEditing && existing) ? existing.createdAt : new Date().toISOString(),
-    // GAS側にも同名の列があるため保存される（platformFeeのみ列がなくmemoタグのみ）
+    // GAS側にも同名の列があるため保存される（platformFee/shippingは列がなくmemoタグのみ）
     linkedInId: linkedInId,
     totalPrice: totalPrice,
     serviceFee: serviceFee,
-    platformFee: platformFee
+    platformFee: platformFee,
+    shipping: shipping
   };
 
   if (!rec.date || !rec.category || !v('out-model') || !rec.name) {
@@ -767,7 +779,7 @@ function submitOut() {
 }
 
 // ===== memo内の付帯情報タグを復元 =====
-// submitOutで埋め込んだ [対応受入:5][合計金額:50000][作業費:3000][手数料:5000] を解析してフィールドに戻す
+// submitOutで埋め込んだ [対応受入:5][合計金額:50000][作業費:3000][手数料:5000][送料:210] を解析してフィールドに戻す
 function parseMetaTags(row) {
   if (!row.memo) return;
   if (typeof row.memo !== 'string') row.memo = String(row.memo);
@@ -775,10 +787,12 @@ function parseMetaTags(row) {
   const m2 = row.memo.match(/\[合計金額:([^\]]+)\]/);
   const m3 = row.memo.match(/\[作業費:([^\]]+)\]/);
   const m4 = row.memo.match(/\[手数料:([^\]]+)\]/);
+  const m5 = row.memo.match(/\[送料:([^\]]+)\]/);
   if (m1) row.linkedInId = m1[1];
   if (m2) row.totalPrice = parseInt(m2[1]) || 0;
   if (m3) row.serviceFee = parseInt(m3[1]) || 0;
   if (m4) row.platformFee = parseInt(m4[1]) || 0;
+  if (m5) row.shipping = parseInt(m5[1]) || 0;
 }
 
 // ===== ローカル全件をGASへ一括アップロード（上書き、バッチ分割） =====
@@ -1131,6 +1145,8 @@ function editEntry() {
     calcOutPrice();
     document.getElementById('out-platformfee').value = d.platformFee || '';
     showPlatformFee();
+    document.getElementById('out-shipping').value = d.shipping || '';
+    showShippingFee();
     document.getElementById('out-age2').value = d.age || '';
     document.getElementById('out-idMethod').value = d.idMethod || '';
     document.getElementById('out-idNo').value = d.idNo || '';
@@ -1141,7 +1157,7 @@ function editEntry() {
     // ※個別の作業項目（品目名ごとの内訳）はタグ化されておらず備考に文字として混在しているため、
     //   service-rowsへの個別復元はできない（このアプリのデータ構造上、確認できません）。
     let memo = d.memo || '';
-    memo = memo.replace(/\[対応受入:[^\]]+\]/, '').replace(/\[合計金額:[^\]]+\]/, '').replace(/\[作業費:[^\]]+\]/, '').replace(/\[手数料:[^\]]+\]/, '').trim();
+    memo = memo.replace(/\[対応受入:[^\]]+\]/, '').replace(/\[合計金額:[^\]]+\]/, '').replace(/\[作業費:[^\]]+\]/, '').replace(/\[手数料:[^\]]+\]/, '').replace(/\[送料:[^\]]+\]/, '').trim();
     document.getElementById('out-memo').value = memo;
     document.querySelector('#t-out .btn-primary').textContent = '更新を保存（編集中：払出-' + d.id + '）';
   }
@@ -1287,6 +1303,9 @@ function clearOut() {
   const feeEl = document.getElementById('out-platformfee');
   if (feeEl) feeEl.value = '';
   showPlatformFee();
+  const shipEl = document.getElementById('out-shipping');
+  if (shipEl) shipEl.value = '';
+  showShippingFee();
   calcOutPrice();
   if (editMode === 'out') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); updateLinkedSelect(); }
   else { renderLinkedOptions(); }
@@ -1449,6 +1468,12 @@ function applyPlatformFee(idx) {
 function showPlatformFee() {
   const val = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
   const el = document.getElementById('disp-platformfee');
+  if (el) el.textContent = '¥ ' + val.toLocaleString();
+}
+
+function showShippingFee() {
+  const val = parseInt((document.getElementById('out-shipping')?.value||'').replace(/,/g,'')) || 0;
+  const el = document.getElementById('disp-shipping');
   if (el) el.textContent = '¥ ' + val.toLocaleString();
 }
 
@@ -1962,17 +1987,19 @@ function previewSalesJournal() {
   const wrap = document.getElementById('sales-journal-preview');
   if (!data.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">対象データがありません</p>'; return; }
 
-  let sumSales = 0, sumFee = 0;
+  let sumSales = 0, sumFee = 0, sumShip = 0;
   const rows = data.map(d => {
     const sales = salesAmount(d);
     const fee = parseInt(d.platformFee) || 0;
-    sumSales += sales; sumFee += fee;
+    const ship = parseInt(d.shipping) || 0;
+    sumSales += sales; sumFee += fee; sumShip += ship;
     return `<tr>
       <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.date}</td>
       <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.feature || ''}</td>
       <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${sales.toLocaleString()}</td>
       <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${fee.toLocaleString()}</td>
-      <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${(sales - fee).toLocaleString()}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${ship.toLocaleString()}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${(sales - fee - ship).toLocaleString()}</td>
     </tr>`;
   }).join('');
 
@@ -1983,6 +2010,7 @@ function previewSalesJournal() {
         <th style="padding:4px 8px">日付</th><th style="padding:4px 8px">品名</th>
         <th style="padding:4px 8px;text-align:right">売上</th>
         <th style="padding:4px 8px;text-align:right">販売手数料</th>
+        <th style="padding:4px 8px;text-align:right">送料</th>
         <th style="padding:4px 8px;text-align:right">未収入金</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -1990,7 +2018,8 @@ function previewSalesJournal() {
         <td style="padding:4px 8px" colspan="2">合計（${data.length}件）</td>
         <td style="padding:4px 8px;text-align:right">¥${sumSales.toLocaleString()}</td>
         <td style="padding:4px 8px;text-align:right">¥${sumFee.toLocaleString()}</td>
-        <td style="padding:4px 8px;text-align:right">¥${(sumSales - sumFee).toLocaleString()}</td>
+        <td style="padding:4px 8px;text-align:right">¥${sumShip.toLocaleString()}</td>
+        <td style="padding:4px 8px;text-align:right">¥${(sumSales - sumFee - sumShip).toLocaleString()}</td>
       </tr></tfoot>
     </table>
     </div>`;
@@ -2011,12 +2040,16 @@ function exportSalesJournalCSV() {
   data.forEach(d => {
     const sales = salesAmount(d);
     const fee = parseInt(d.platformFee) || 0;
+    const ship = parseInt(d.shipping) || 0;
     const item = (d.feature || '').replace(/\n/g, ' ');
     const dateSlash = fmtDateSlashFull(d.date);
     const no = String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号は半角数字のみ
     rows.push(['[明細行]', dateSlash, no, '未収入金', '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]);
     if (fee > 0) {
       rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '未収入金', '', fee, d.name || '', 'プラットフォーム手数料：' + item]);
+    }
+    if (ship > 0) {
+      rows.push(['[明細行]', dateSlash, no, '荷造運賃', '課対仕入10%', ship, '未収入金', '', ship, d.name || '', '送料・梱包費：' + item]);
     }
     denpyoSeq++;
   });
@@ -2047,7 +2080,7 @@ function renderPayoutPendingList() {
         <th style="padding:4px 8px;text-align:right">未収入金</th>
       </tr></thead>
       <tbody>${data.map(d => {
-        const receivable = salesAmount(d) - (parseInt(d.platformFee) || 0);
+        const receivable = salesAmount(d) - (parseInt(d.platformFee) || 0) - (parseInt(d.shipping) || 0);
         return `<tr>
           <td style="padding:4px 8px;border-bottom:1px solid var(--border)"><input type="checkbox" class="pd-check" value="${d.uid}" data-amt="${receivable}" checked onchange="updatePayoutDiff()"></td>
           <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.date}</td>
@@ -2161,7 +2194,7 @@ function exportCSV(type) {
   if (type==='受入') data = data.filter(d=>isInKubun(d.kubun));
   else if (type==='払出') data = data.filter(d=>isOutKubun(d.kubun));
   if (!data.length) { toast('データなし','err'); return; }
-  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee','platformFee'];
+  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee','platformFee','shipping'];
   const csv = [keys.join(','), ...data.map(d=>keys.map(k=>'"'+String(d[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
