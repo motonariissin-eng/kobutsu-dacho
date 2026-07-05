@@ -354,56 +354,17 @@
   </div>
 
   <div class="card">
-    <h2>プラットフォーム振込（払出）記録</h2>
-    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">メルカリ・ジモティ等のウォレット残高がまとまって銀行口座に振り込まれた際の記録です。振込時にかかる手数料も一緒に記録し、freeeへの入力漏れを防ぎます。</p>
-    <div class="field"><label>振込日 *</label><input type="date" id="payout-date"></div>
-    <div class="field">
-      <label>プラットフォーム *</label>
-      <div id="payout-platform-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
-      <input type="text" id="payout-platform" placeholder="例：メルカリ">
-    </div>
-    <div class="field"><label>振込金額（円）※手数料を引かれた後の入金額 *</label><input type="text" inputmode="numeric" id="payout-amount" placeholder="0"></div>
-    <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="payout-fee" placeholder="0"></div>
-    <div class="field"><label>備考</label><input type="text" id="payout-memo" placeholder="任意"></div>
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="submitPayout()">記録を保存</button>
-      <button class="btn btn-secondary" onclick="clearPayout()">クリア</button>
-    </div>
-    <div id="payout-list" style="margin-top:14px;display:flex;flex-direction:column;gap:8px"></div>
-    <div class="btn-group" style="margin-top:10px">
-      <button class="btn btn-secondary" onclick="exportPayoutCSV()">振込記録CSV出力（バックアップ用）</button>
-      <button class="btn btn-primary" onclick="exportPayoutFreeeCSV()">振込手数料 freee用CSV出力</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>CSV①　売上登録用（売れるごと）</h2>
-    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">払出（売却）データから、1台ごとに「未収入金／売上高」「支払手数料／未収入金」の仕訳（振替伝票）を出力します。freeeの［取引入力］→［振替伝票］→［インポート］→［他社会計ソフトインポート］で取り込んでください。</p>
+    <h2>CSV　売上登録用（売れるごと）</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">払出（売却）データから、1台ごとに「未収入金／売上高」「支払手数料／未収入金」の仕訳（振替伝票）を出力します。freeeの［取引入力］→［振替伝票］→［インポート］→［他社会計ソフトインポート］で取り込んでください。出金消込は「統合出金消込ツール」で行ってください。</p>
     <div class="row2">
       <div class="field"><label>期間（開始・任意）</label><input type="date" id="sales-from"></div>
       <div class="field"><label>期間（終了・任意）</label><input type="date" id="sales-to"></div>
     </div>
     <div class="btn-group">
       <button class="btn btn-secondary" onclick="previewSalesJournal()">対象データを確認</button>
-      <button class="btn btn-primary" onclick="exportSalesJournalCSV()">CSV①　売上登録用を出力</button>
+      <button class="btn btn-primary" onclick="exportSalesJournalCSV()">CSV　売上登録用を出力</button>
     </div>
     <div id="sales-journal-preview" style="margin-top:12px"></div>
-  </div>
-
-  <div class="card">
-    <h2>CSV②　出金登録用（メルカリ等から銀行へ振り込まれた日にだけ作成）</h2>
-    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">古物台帳には「出金日」の概念がないため、下のチェックリストで「今回の振込に含まれる売却案件」を選び、出金日・銀行入金額・振込手数料を入力してください。選んだ案件は「出金済」としてマークされ、次回以降このリストから外れます。</p>
-    <div id="payout-pending-list" style="margin-bottom:12px"></div>
-    <div class="row2">
-      <div class="field"><label>出金日 *</label><input type="date" id="pd-date"></div>
-      <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="pd-fee" placeholder="0" oninput="updatePayoutDiff()"></div>
-    </div>
-    <div class="field"><label>銀行入金額（円） *</label><input type="text" inputmode="numeric" id="pd-bank" placeholder="0" oninput="updatePayoutDiff()"></div>
-    <div id="payout-diff-check" style="font-size:12px;margin-bottom:8px"></div>
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="exportPayoutJournalCSV()">CSV②を出力して出金済にする</button>
-    </div>
-    <div id="payout-journal-result" style="margin-top:10px"></div>
   </div>
 
   <div class="card">
@@ -1268,11 +1229,6 @@ document.addEventListener('DOMContentLoaded', function() {
   buildPartnerButtons();
   buildServiceQuickButtons();
   buildPlatformFeeButtons();
-  buildPayoutPlatformButtons();
-  document.getElementById('payout-date').value = todayISO();
-  renderPayoutList();
-  document.getElementById('pd-date').value = todayISO();
-  renderPayoutPendingList();
 });
 
 // ===== フォームクリア =====
@@ -1776,114 +1732,10 @@ function importBackupJSON(input) {
   reader.readAsText(file);
 }
 
-// ===== プラットフォーム振込（払出）記録 =====
-// ウォレットにまとまった売上金を銀行に振込申請した際の、振込日・振込金額・手数料を記録する。
-// 台帳の受入・払出データとは別物のため、GASへは送らずローカル保存＋CSV出力のみで管理する。
-const PAYOUT_LS = 'kobutu_payouts_v1';
-const PAYOUT_PLATFORM_PRESETS = ['メルカリ', 'ジモティ'];
-
-function loadPayouts() { try { return JSON.parse(localStorage.getItem(PAYOUT_LS) || '[]'); } catch(e) { return []; } }
-function savePayouts(d) { localStorage.setItem(PAYOUT_LS, JSON.stringify(d)); }
-
-function buildPayoutPlatformButtons() {
-  const c = document.getElementById('payout-platform-btns');
-  if (!c) return;
-  c.innerHTML = PAYOUT_PLATFORM_PRESETS.map(p =>
-    `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="document.getElementById('payout-platform').value='${p}'">${p}</button>`
-  ).join('');
-}
-
-function submitPayout() {
-  const date = v('payout-date');
-  const platform = v('payout-platform');
-  const amount = parseInt((document.getElementById('payout-amount')?.value||'').replace(/,/g,'')) || 0;
-  const fee = parseInt((document.getElementById('payout-fee')?.value||'').replace(/,/g,'')) || 0;
-  const memo = v('payout-memo');
-
-  if (!date || !platform || !amount) {
-    toast('振込日・プラットフォーム・振込金額を入力してください', 'err'); return;
-  }
-
-  const rec = { uid: uid(), date, platform, amount, fee, memo, createdAt: new Date().toISOString() };
-  const all = loadPayouts();
-  all.push(rec);
-  savePayouts(all);
-  toast('振込記録を保存しました', 'ok');
-  clearPayout();
-  renderPayoutList();
-}
-
-function clearPayout() {
-  ['payout-date','payout-platform','payout-amount','payout-fee','payout-memo'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
-  });
-  document.getElementById('payout-date').value = todayISO();
-}
-
-function deletePayout(uidVal) {
-  if (!confirm('この振込記録を削除します。よろしいですか？')) return;
-  const all = loadPayouts().filter(r => String(r.uid) !== String(uidVal));
-  savePayouts(all);
-  renderPayoutList();
-}
-
-function renderPayoutList() {
-  const wrap = document.getElementById('payout-list');
-  if (!wrap) return;
-  const all = loadPayouts().sort((a,b) => (a.date < b.date ? 1 : -1));
-  if (!all.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">記録はまだありません</p>'; return; }
-  wrap.innerHTML = all.map(r => `
-    <div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px">
-      <div>
-        <div><b>${r.date}</b>　${r.platform}　振込額 ¥${(r.amount||0).toLocaleString()}　手数料 ¥${(r.fee||0).toLocaleString()}</div>
-        ${r.memo ? `<div style="color:var(--text2);margin-top:2px">${r.memo}</div>` : ''}
-      </div>
-      <button class="btn btn-danger" style="font-size:11px;padding:4px 8px;flex-shrink:0" onclick="deletePayout('${r.uid}')">削除</button>
-    </div>
-  `).join('');
-}
-
-function exportPayoutFreeeCSV() {
-  const data = loadPayouts().filter(r => parseInt(r.fee) > 0);
-  if (!data.length) { toast('手数料が登録された振込記録がありません', 'err'); return; }
-
-  // freeeのエクセルインポート（支出取引データ）の列形式
-  const header = ['発生日','収支区分','勘定科目','税区分','金額','取引先','取引内容','備考','決済日'];
-  const rows = data.map(r => {
-    const date = r.date || '';
-    const platform = r.platform || '';
-    const fee = parseInt(r.fee) || 0;
-    const memo = '振込手数料（' + platform + '）' + (r.memo ? ' ' + r.memo : '');
-    return [date, '支出', '支払手数料', '課対仕入10%', fee, platform, '振込手数料', memo, date];
-  });
-
-  // SheetJSでxlsx生成
-  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  // 列幅を設定
-  ws['!cols'] = [12,10,14,14,10,14,12,30,12].map(w => ({wch: w}));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '振込手数料');
-  XLSX.writeFile(wb, '振込手数料_freee用_' + todayISO().replace(/-/g,'') + '.xlsx');
-  toast('freee用xlsxを出力しました', 'ok');
-}
-
-function exportPayoutCSV() {
-  if (!data.length) { toast('振込記録がありません', 'err'); return; }
-  const keys = ['date','platform','amount','fee','memo'];
-  const header = ['振込日','プラットフォーム','振込金額','振込手数料','備考'];
-  const csv = [header.join(','), ...data.map(d => keys.map(k => '"'+String(d[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
-  a.download = '振込記録_'+todayISO().replace(/-/g,'')+'.csv';
-  a.click();
-}
-
-// ===== 未収入金運用：CSV①（売上登録用）／CSV②（出金登録用） =====
+// ===== 未収入金運用：CSV（売上登録用） =====
 // 古物台帳には「出金日」の概念がないため、払出（売却）レコードのmemoに
-// [出金済:1][出金日:YYYY-MM-DD] タグを追加して管理する（platformFee等と同じ方式）。
-// CSV①：売れるたびに作る。1台につき「未収入金／売上高」「支払手数料／未収入金」の振替伝票を出力（freeeの勘定科目や補助科目には触れず、freee側で借方・貸方の各列を指定してインポートする）。
-// CSV②：メルカリ等から実際に銀行へ振り込まれた日にだけ作る。選んだ売却案件の未収入金合計を、
-//        「普通預金＋振込手数料／未収入金」の1伝票で取り崩す。出力すると同時に対象を「出金済」にする。
+// [出金済:1][出金日:YYYY-MM-DD] タグを追加して管理する（platformFee等と同じ方式。出金消込は統合出金消込ツールで行う）。
+// CSV：売れるたびに作る。1台につき「未収入金／売上高」「支払手数料／未収入金」の振替伝票を出力（freeeの勘定科目や補助科目には触れず、freee側で借方・貸方の各列を指定してインポートする）。
 
 function fmtDateSlash(iso) {
   if (!iso) return '';
@@ -1910,7 +1762,7 @@ function downloadCSV(header, rows, filename) {
   a.click();
 }
 
-// ---- CSV①：売上登録用 ----
+// ---- CSV：売上登録用 ----
 function getSalesJournalTargets() {
   const from = v('sales-from');
   const to = v('sales-to');
@@ -1995,135 +1847,6 @@ function exportSalesJournalCSV() {
   toast(data.length + '件（' + rows.length + '行）のfreee用CSVを出力しました', 'ok');
 }
 
-// ---- CSV②：出金登録用 ----
-function getPayoutPendingTargets() {
-  return load()
-    .filter(d => isOutKubun(d.kubun) && salesAmount(d) > 0 && !d.payoutDone)
-    .sort((a, b) => (a.date < b.date ? -1 : 1));
-}
-
-function renderPayoutPendingList() {
-  const wrap = document.getElementById('payout-pending-list');
-  if (!wrap) return;
-  const data = getPayoutPendingTargets();
-  if (!data.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">未出金（未収入金が残っている）売却案件はありません</p>'; return; }
-
-  wrap.innerHTML = `
-    <div style="overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="text-align:left;color:var(--text2)">
-        <th style="padding:4px 8px"><input type="checkbox" id="pd-select-all" checked onchange="togglePayoutSelectAll(this)"></th>
-        <th style="padding:4px 8px">日付</th><th style="padding:4px 8px">品名</th>
-        <th style="padding:4px 8px;text-align:right">未収入金</th>
-      </tr></thead>
-      <tbody>${data.map(d => {
-        const receivable = salesAmount(d) - (parseInt(d.platformFee) || 0);
-        return `<tr>
-          <td style="padding:4px 8px;border-bottom:1px solid var(--border)"><input type="checkbox" class="pd-check" value="${d.uid}" data-amt="${receivable}" checked onchange="updatePayoutDiff()"></td>
-          <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.date}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.feature || ''}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${receivable.toLocaleString()}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>
-    </div>`;
-  updatePayoutDiff();
-}
-
-function togglePayoutSelectAll(cb) {
-  document.querySelectorAll('.pd-check').forEach(el => { el.checked = cb.checked; });
-  updatePayoutDiff();
-}
-
-function getSelectedPayoutTotal() {
-  let sum = 0;
-  document.querySelectorAll('.pd-check:checked').forEach(el => { sum += parseInt(el.dataset.amt) || 0; });
-  return sum;
-}
-
-function updatePayoutDiff() {
-  const box = document.getElementById('payout-diff-check');
-  if (!box) return;
-  const selectedTotal = getSelectedPayoutTotal();
-  const bank = parseInt((document.getElementById('pd-bank')?.value || '').replace(/,/g, '')) || 0;
-  const fee = parseInt((document.getElementById('pd-fee')?.value || '').replace(/,/g, '')) || 0;
-  const diff = selectedTotal - (bank + fee);
-  if (!selectedTotal) { box.innerHTML = ''; return; }
-  if (diff === 0) {
-    box.innerHTML = `<span style="color:var(--accent)">選択した未収入金合計 ¥${selectedTotal.toLocaleString()} と、銀行入金額＋振込手数料が一致しています ✓</span>`;
-  } else {
-    box.innerHTML = `<span style="color:#e05252">選択した未収入金合計 ¥${selectedTotal.toLocaleString()} に対して、差額 ¥${diff.toLocaleString()} あります（入力を確認してください）</span>`;
-  }
-}
-
-function setMemoTag(memo, tagName, value) {
-  const re = new RegExp('\\[' + tagName + ':[^\\]]*\\]', 'g');
-  let m = (memo || '').replace(re, '').trim();
-  if (value !== null && value !== undefined && value !== '') {
-    m = ('[' + tagName + ':' + value + ']' + (m ? ' ' + m : '')).trim();
-  }
-  return m;
-}
-
-function exportPayoutJournalCSV() {
-  const checks = Array.from(document.querySelectorAll('.pd-check:checked'));
-  if (!checks.length) { toast('出金に含める売却案件を選択してください', 'err'); return; }
-  const payoutDate = v('pd-date');
-  const bank = parseInt((document.getElementById('pd-bank')?.value || '').replace(/,/g, '')) || 0;
-  const fee = parseInt((document.getElementById('pd-fee')?.value || '').replace(/,/g, '')) || 0;
-  if (!payoutDate || !bank) { toast('出金日・銀行入金額を入力してください', 'err'); return; }
-
-  const uids = checks.map(el => el.value);
-  const receivableTotal = getSelectedPayoutTotal();
-
-  if (receivableTotal !== bank + fee) {
-    if (!confirm('未収入金合計と（銀行入金額＋振込手数料）が一致していません。\n未収入金合計：¥' + receivableTotal.toLocaleString() + '\n銀行入金額＋手数料：¥' + (bank + fee).toLocaleString() + '\n\nこのまま出力・出金済登録を続けますか？')) return;
-  }
-
-  // freee「仕訳インポート（振替伝票）」用の1伝票（借方2行・貸方1行）
-  // 1列目の[表題行]/[明細行]マーカーが無いとfreeeがファイル形式を認識できないため必須。
-  // 伝票番号は半角数字のみ（YYYYMMDD）。日付はYYYY/MM/DD形式が必須。
-  const no = payoutDate.replace(/-/g, '');
-  const dateSlash = fmtDateSlashFull(payoutDate);
-  const header = ['[表題行]', '日付', '伝票No.', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '摘要'];
-  const rows = [
-    ['[明細行]', dateSlash, no, '普通預金', '', bank, '', '', '', 'ウォレットからの振込入金'],
-  ];
-  if (fee > 0) rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '', '', '', '振込手数料']);
-  rows.push(['[明細行]', dateSlash, no, '', '', '', '未収入金', '', receivableTotal, '未収入金の取り崩し']);
-
-  downloadCSV(header, rows, '出金登録_freee用_' + payoutDate.replace(/-/g, '') + '.csv');
-
-  // 選択した売却レコードを「出金済」にマークしてローカル保存＋GAS反映
-  const all = load();
-  const updated = [];
-  all.forEach(r => {
-    if (uids.includes(String(r.uid))) {
-      r.payoutDone = true;
-      r.payoutDate = payoutDate;
-      r.memo = setMemoTag(r.memo, '出金済', '1');
-      r.memo = setMemoTag(r.memo, '出金日', payoutDate);
-      updated.push(r);
-    }
-  });
-  save(all);
-
-  let doneCount = 0;
-  updated.forEach(rec => {
-    gasPost(rec, function () {
-      doneCount++;
-      if (doneCount === updated.length) {
-        toast(updated.length + '件を出金済にしました（GAS反映完了）', 'ok');
-        renderPayoutPendingList();
-      }
-    });
-  });
-
-  document.getElementById('payout-journal-result').innerHTML =
-    `<p style="font-size:12px;color:var(--text2)">出力しました。${updated.length}件を出金済に更新中です…</p>`;
-
-  toast('CSV②を出力しました', 'ok');
-}
 
 // ===== CSV =====
 function exportCSV(type) {
