@@ -198,7 +198,7 @@ function exportSalesJournalCSV(){
   const data = load().filter(d => !d.payoutDone);
   if (!data.length){ toast('sales-msg', '対象データがありません（未出金の記録がありません）', 'err'); return; }
 
-  const header = ['[表題行]','日付','伝票番号','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','取引先','摘要'];
+  const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','取引先','摘要'];
   const rows = [];
   data.forEach(d => {
     const dateSlash = fmtDateSlash(d.date);
@@ -294,7 +294,7 @@ function exportPayoutJournalCSV(){
 
   const no = payoutDate.replace(/-/g,'');
   const dateSlash = fmtDateSlash(payoutDate);
-  const header = ['[表題行]','日付','伝票番号','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','摘要'];
+  const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','摘要'];
   const rows = [
     ['[明細行]', dateSlash, no, '普通預金', '', bank, '', '', '', '書類売上の振込入金'],
   ];
