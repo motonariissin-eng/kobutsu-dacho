@@ -122,8 +122,9 @@
           <option value="対象外">対象外</option>
         </select>
       </div>
-      <div class="field"><label>使った金額（未収入金・自動計算）</label><input type="text" id="pu-amount-disp" disabled></div>
+      <div class="field"><label>選択中の未収入金合計（上限）</label><input type="text" id="pu-amount-max" disabled></div>
     </div>
+    <div class="field"><label>実際に使った金額 *</label><input type="text" inputmode="numeric" id="pu-amount" placeholder="例：3000" oninput="markPuAmountDirty()"></div>
     <div class="field"><label>摘要・備考</label><input type="text" id="pu-memo" placeholder="例：メルカリ売上金で部品購入（銀行を経由せず）"></div>
     <div id="pu-selected-info" style="font-size:12px;margin-bottom:8px;color:var(--text2)"></div>
     <div class="btn-group">
@@ -176,14 +177,14 @@
     <p class="desc">古物台帳の対象にならない「書類」などの売上を記録します。出金消込は「出金消込」タブでバイク・小物とまとめて行います。</p>
     <div class="row2">
       <div class="field"><label>日付 *</label><input type="date" id="doc-date"></div>
-      <div class="field"><label>販売金額（円） *</label><input type="text" inputmode="numeric" id="doc-price" placeholder="300"></div>
+      <div class="field"><label>販売金額（円） *</label><input type="text" inputmode="numeric" id="doc-price" value="300"></div>
     </div>
     <div class="row2">
-      <div class="field"><label>販売手数料（円）</label><input type="text" inputmode="numeric" id="doc-fee" placeholder="30"></div>
-      <div class="field"><label>送料・荷造り料金（円）</label><input type="text" inputmode="numeric" id="doc-shipping" placeholder="210"></div>
+      <div class="field"><label>販売手数料（円）</label><input type="text" inputmode="numeric" id="doc-fee" value="30"></div>
+      <div class="field"><label>送料・荷造り料金（円）</label><input type="text" inputmode="numeric" id="doc-shipping" value="210"></div>
     </div>
-    <div class="field"><label>品名・内容</label><input type="text" id="doc-item" placeholder="例：登録書類発行"></div>
-    <div class="field"><label>売却先（任意）</label><input type="text" id="doc-name" placeholder="例：メルカリ購入者"></div>
+    <div class="field"><label>品名・内容</label><input type="text" id="doc-item" value="書類発送料"></div>
+    <div class="field"><label>売却先（任意）</label><input type="text" id="doc-name" value="メルカリ購入者様"></div>
     <div class="btn-group">
       <button class="btn btn-primary" onclick="addDocRecord()">追加する</button>
     </div>
@@ -300,6 +301,19 @@ function salesAmountOf(rec){
 }
 function platformFeeOf(rec){ return parseInt(parseMemoTag(rec.memo, '手数料')) || 0; }
 function payoutDoneOf(rec){ return parseMemoTag(rec.memo, '出金済') === '1'; }
+function totalReceivableOf(rec){ return salesAmountOf(rec) - platformFeeOf(rec); }
+function remainingOf(rec){
+  if (payoutDoneOf(rec)) return 0;
+  const bal = parseMemoTag(rec.memo, '残高');
+  if (bal !== '') return parseInt(bal, 10) || 0;
+  return totalReceivableOf(rec);
+}
+function totalReceivableOfDoc(d){ return (parseInt(d.price)||0) - (parseInt(d.fee)||0) - (parseInt(d.shipping)||0); }
+function remainingOfDoc(d){
+  if (d.payoutDone) return 0;
+  if (d.payoutBalance !== undefined && d.payoutBalance !== null && d.payoutBalance !== '') return parseInt(d.payoutBalance, 10) || 0;
+  return totalReceivableOfDoc(d);
+}
 
 // ===== タブ切替 =====
 function tab(id, btn){
@@ -346,14 +360,14 @@ function refreshPending(){
 
 function getUnifiedPendingList(){
   const list = [];
-  bikeEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && !payoutDoneOf(d)).forEach(d => {
-    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), raw:d });
+  bikeEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && remainingOf(d) > 0).forEach(d => {
+    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: remainingOf(d), raw:d });
   });
-  partsEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && !payoutDoneOf(d)).forEach(d => {
-    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), raw:d });
+  partsEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && remainingOf(d) > 0).forEach(d => {
+    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: remainingOf(d), raw:d });
   });
-  loadDocs().filter(d => !d.payoutDone).forEach(d => {
-    list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: (parseInt(d.price)||0) - (parseInt(d.fee)||0) - (parseInt(d.shipping)||0), raw:d });
+  loadDocs().filter(d => remainingOfDoc(d) > 0).forEach(d => {
+    list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: remainingOfDoc(d), raw:d });
   });
   return list.sort((a,b)=> a.date < b.date ? -1 : 1);
 }
@@ -413,13 +427,14 @@ function revertPayout(){
   selectedItems.forEach(p => {
     if (p.source === 'docs'){
       const rec = docsAll.find(d => String(d.id) === String(p.raw.id));
-      if (rec){ rec.payoutDone = false; rec.payoutDate = ''; rec.payoutMethod = ''; rec.payoutAccount = ''; }
+      if (rec){ rec.payoutDone = false; rec.payoutDate = ''; rec.payoutMethod = ''; rec.payoutAccount = ''; rec.payoutBalance = null; }
     } else {
       const rec = Object.assign({}, p.raw);
       rec.memo = setMemoTag(rec.memo, '出金済', null);
       rec.memo = setMemoTag(rec.memo, '出金日', null);
       rec.memo = setMemoTag(rec.memo, '出金方法', null);
       rec.memo = setMemoTag(rec.memo, '消込先', null);
+      rec.memo = setMemoTag(rec.memo, '残高', null);
       const url = (p.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
       writebacks.push(fetch(url).then(r=>r.json()));
     }
@@ -440,23 +455,28 @@ function revertPayout(){
 
 function renderPendingList(){
   pendingList = getUnifiedPendingList();
+  puAmountDirty = false;
   const wrap = document.getElementById('payout-pending-list');
   if (!pendingList.length){ wrap.innerHTML = '<p class="empty">未出金の記録はありません</p>'; return; }
   wrap.innerHTML = `
     <table>
       <thead><tr>
         <th><input type="checkbox" checked onchange="togglePayoutSelectAll(this)"></th>
-        <th>区分</th><th>日付</th><th>品名</th><th class="num">未収入金</th>
+        <th>区分</th><th>日付</th><th>品名</th><th class="num">残り未収入金</th>
       </tr></thead>
       <tbody>
-        ${pendingList.map(p => `
+        ${pendingList.map(p => {
+          const total = p.source === 'docs' ? totalReceivableOfDoc(p.raw) : totalReceivableOf(p.raw);
+          const partialNote = total > p.receivable ? '<div style="font-size:11px;color:var(--text2)">元¥' + total.toLocaleString() + '（一部すでに消込済）</div>' : '';
+          return `
           <tr>
             <td><input type="checkbox" class="pd-check" value="${p.key}" data-amt="${p.receivable}" checked onchange="updateSelectionSummary()"></td>
             <td><span class="src-tag src-${p.source}">${p.label}</span></td>
             <td>${p.date}</td>
             <td>${p.item}</td>
-            <td class="num">¥${p.receivable.toLocaleString()}</td>
-          </tr>`).join('')}
+            <td class="num">¥${p.receivable.toLocaleString()}${partialNote}</td>
+          </tr>`;
+        }).join('')}
       </tbody>
     </table>`;
   updateSelectionSummary();
@@ -466,6 +486,8 @@ function togglePayoutSelectAll(cb){
   document.querySelectorAll('.pd-check').forEach(el => el.checked = cb.checked);
   updateSelectionSummary();
 }
+let puAmountDirty = false;
+function markPuAmountDirty(){ puAmountDirty = true; }
 function updateSelectionSummary(){
   updatePayoutDiff();
   updateInternalUseInfo();
@@ -559,10 +581,13 @@ function getPuAccountName(){
 }
 function updateInternalUseInfo(){
   const total = getSelectedPayoutTotal();
-  document.getElementById('pu-amount-disp').value = total ? '¥' + total.toLocaleString() : '';
+  document.getElementById('pu-amount-max').value = total ? '¥' + total.toLocaleString() : '';
+  if (!puAmountDirty) {
+    document.getElementById('pu-amount').value = total || '';
+  }
   const info = document.getElementById('pu-selected-info');
   const n = document.querySelectorAll('.pd-check:checked').length;
-  info.textContent = total ? ('「1. 未出金の一覧」で選択中の ' + n + '件・合計 ¥' + total.toLocaleString() + ' を、下記の勘定科目に対して未収入金からそのまま取り崩します。') : '';
+  info.textContent = total ? ('「1. 未出金の一覧」で選択中の ' + n + '件・合計 ¥' + total.toLocaleString() + ' が上限です。実際に使った金額だけを下に入力してください（全額でなくてもOK）。') : '';
 }
 
 function exportInternalUseJournalCSV(){
@@ -572,39 +597,66 @@ function exportInternalUseJournalCSV(){
   const account = getPuAccountName();
   const tax = v('pu-tax');
   const memo = v('pu-memo').trim() || 'メルカリ売上金で購入（銀行を経由せず）';
+  const amount = parseInt(String(v('pu-amount')).replace(/[^0-9]/g, ''), 10) || 0;
   if (!useDate){ msgBox('pu-msg', '使用日を入力してください', 'err'); return; }
   if (!account){ msgBox('pu-msg', '勘定科目を選択（または自由入力）してください', 'err'); return; }
+  if (!amount){ msgBox('pu-msg', '実際に使った金額を入力してください', 'err'); return; }
 
   const selectedKeys = new Set(checks.map(el => el.value));
-  const selectedItems = pendingList.filter(p => selectedKeys.has(p.key));
-  const total = selectedItems.reduce((s,p)=>s+p.receivable, 0);
-  if (!total){ msgBox('pu-msg', '選択した案件の未収入金合計が0円です', 'err'); return; }
+  // 日付が古い案件から順に消込む（先入れ先出し）
+  const selectedItems = pendingList.filter(p => selectedKeys.has(p.key)).slice().sort((a,b)=> a.date < b.date ? -1 : (a.date > b.date ? 1 : 0));
+  const available = selectedItems.reduce((s,p)=>s+p.receivable, 0);
+  if (amount > available){ msgBox('pu-msg', '入力した金額（¥' + amount.toLocaleString() + '）が、選択した未収入金の合計（¥' + available.toLocaleString() + '）を超えています', 'err'); return; }
 
-  if (!confirm('銀行を経由せず、下記の仕訳をfreee用CSVとして出力します。よろしいですか？\n\n借方：' + account + ' ¥' + total.toLocaleString() + '\n貸方：未収入金 ¥' + total.toLocaleString() + '\n対象：' + selectedItems.length + '件')) return;
+  // 選択した案件へ、古い順に amount を割り当てる
+  let remain = amount;
+  const consumption = [];
+  for (const p of selectedItems){
+    if (remain <= 0) break;
+    const use = Math.min(remain, p.receivable);
+    consumption.push({ item: p, consumed: use, newBalance: p.receivable - use });
+    remain -= use;
+  }
+
+  const usedCount = consumption.length;
+  const fullNote = consumption.some(c => c.newBalance > 0) ? '\n（一部の案件は残額が残るため「未出金」に残ります）' : '';
+  if (!confirm('銀行を経由せず、下記の仕訳をfreee用CSVとして出力します。よろしいですか？\n\n借方：' + account + ' ¥' + amount.toLocaleString() + '\n貸方：未収入金 ¥' + amount.toLocaleString() + '\n対象：' + usedCount + '件' + fullNote)) return;
 
   const no = useDate.replace(/-/g,'');
   const dateSlash = fmtDateSlash(useDate);
   const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','摘要'];
   const rows = [
-    ['[明細行]', dateSlash, no, account, tax === '対象外' ? '' : tax, total, '未収入金', '', total, memo],
+    ['[明細行]', dateSlash, no, account, tax === '対象外' ? '' : tax, amount, '未収入金', '', amount, memo],
   ];
 
   downloadCSV(header, rows, '内部消化登録_freee用_' + useDate.replace(/-/g,'') + '.csv');
 
-  // 消込済への書き戻し（銀行を経由していないことをタグで区別する）
+  // 消込済／残高への書き戻し（銀行を経由していないことをタグで区別する。一部だけ使った場合は残高を更新して未出金に残す）
   showLoad(true);
   const writebacks = [];
   const docsAll = loadDocs();
-  selectedItems.forEach(p => {
+  consumption.forEach(c => {
+    const p = c.item;
     if (p.source === 'docs'){
       const rec = docsAll.find(d => String(d.id) === String(p.raw.id));
-      if (rec){ rec.payoutDone = true; rec.payoutDate = useDate; rec.payoutMethod = '内部消化'; rec.payoutAccount = account; }
+      if (rec){
+        if (c.newBalance <= 0){
+          rec.payoutDone = true; rec.payoutDate = useDate; rec.payoutMethod = '内部消化'; rec.payoutAccount = account; rec.payoutBalance = 0;
+        } else {
+          rec.payoutBalance = c.newBalance;
+        }
+      }
     } else {
       const rec = Object.assign({}, p.raw);
-      rec.memo = setMemoTag(rec.memo, '出金済', '1');
-      rec.memo = setMemoTag(rec.memo, '出金日', useDate);
-      rec.memo = setMemoTag(rec.memo, '出金方法', '内部消化');
-      rec.memo = setMemoTag(rec.memo, '消込先', account);
+      if (c.newBalance <= 0){
+        rec.memo = setMemoTag(rec.memo, '出金済', '1');
+        rec.memo = setMemoTag(rec.memo, '出金日', useDate);
+        rec.memo = setMemoTag(rec.memo, '出金方法', '内部消化');
+        rec.memo = setMemoTag(rec.memo, '消込先', account);
+        rec.memo = setMemoTag(rec.memo, '残高', null);
+      } else {
+        rec.memo = setMemoTag(rec.memo, '残高', c.newBalance);
+      }
       const url = (p.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
       writebacks.push(fetch(url).then(r=>r.json()));
     }
@@ -617,8 +669,9 @@ function exportInternalUseJournalCSV(){
     if (failed){
       msgBox('pu-msg', 'CSVは出力しましたが、GAS側への反映が' + failed + '件失敗しました。「最新の状態を取得」で再確認してください。', 'err');
     } else {
-      msgBox('pu-msg', selectedItems.length + '件を「消込済（内部消化）」にし、CSVを出力しました', 'ok');
+      msgBox('pu-msg', '¥' + amount.toLocaleString() + '分を「消込済（内部消化）」にし、CSVを出力しました', 'ok');
     }
+    puAmountDirty = false;
     refreshPending();
   });
 }
@@ -706,8 +759,11 @@ function addDocRecord(){
   const id = data.length ? Math.max(...data.map(d=>d.id)) + 1 : 1;
   data.push({ id, date, price, fee, shipping, item, name, payoutDone:false, payoutDate:'' });
   saveDocs(data);
-  document.getElementById('doc-item').value = '';
-  document.getElementById('doc-name').value = '';
+  document.getElementById('doc-price').value = '300';
+  document.getElementById('doc-fee').value = '30';
+  document.getElementById('doc-shipping').value = '210';
+  document.getElementById('doc-item').value = '書類発送料';
+  document.getElementById('doc-name').value = 'メルカリ購入者様';
   msgBox('doc-add-msg', '登録しました', 'ok');
   renderDocList();
 }
