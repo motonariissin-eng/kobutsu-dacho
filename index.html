@@ -165,6 +165,30 @@
       <div id="in-price-disp" style="font-size:18px;font-weight:700;color:var(--accent);margin-top:6px;min-height:24px;text-align:right"></div>
     </div>
 
+    <div class="row2">
+      <div class="field">
+        <label>支払方法 *</label>
+        <select id="in-paymethod" onchange="toggleInCustomFields()">
+          <option value="普通預金">普通預金（銀行振込・引落）</option>
+          <option value="現金">現金</option>
+          <option value="未収入金">メルカリ残高で購入（銀行を経由しない）</option>
+          <option value="__custom">その他（自由入力）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>仕訳の勘定科目（借方）</label>
+        <select id="in-account" onchange="toggleInCustomFields()">
+          <option value="仕入高">仕入高（転売目的）</option>
+          <option value="消耗品費">消耗品費</option>
+          <option value="工具器具備品">工具器具備品</option>
+          <option value="__custom">その他（自由入力）</option>
+        </select>
+      </div>
+    </div>
+    <div class="field" id="in-paymethod-custom-field" style="display:none"><label>支払方法名（自由入力）</label><input type="text" id="in-paymethod-custom" placeholder="例：法人カード"></div>
+    <div class="field" id="in-account-custom-field" style="display:none"><label>勘定科目名（自由入力）</label><input type="text" id="in-account-custom" placeholder="例：車両部品費"></div>
+    <div id="in-paymethod-note" style="font-size:11px;color:var(--text2);margin-top:-4px;margin-bottom:10px"></div>
+
     <div class="field">
       <label>相手方クイック入力</label>
       <div id="partner-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:2px"></div>
@@ -368,6 +392,21 @@
   </div>
 
   <div class="card">
+    <h2>CSV　仕入登録用（買うごと）</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">受入（買受）データから、1件ごとに「勘定科目／支払方法」の仕訳（振替伝票）を出力します。freeeの［取引入力］→［振替伝票］→［インポート］→［他社会計ソフトインポート］で取り込んでください。「取引」への別入力は不要です。支払方法を「メルカリ残高」で登録した受入は、銀行を経由していないため、このCSVには含めません（統合出金消込ツールで処理してください）。</p>
+    <div class="row2">
+      <div class="field"><label>期間（開始・任意）</label><input type="date" id="purchase-from"></div>
+      <div class="field"><label>期間（終了・任意）</label><input type="date" id="purchase-to"></div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="previewPurchaseJournal()">対象データを確認</button>
+      <button class="btn btn-primary" onclick="exportPurchaseJournalCSV()">CSV　仕入登録用を出力</button>
+    </div>
+    <div id="purchase-journal-preview" style="margin-top:12px"></div>
+  </div>
+
+
+  <div class="card">
     <h2>CSVエクスポート</h2>
     <div class="btn-group">
       <button class="btn btn-secondary" onclick="exportCSV('受入')">受入CSV</button>
@@ -501,6 +540,52 @@ function parseFeature(feature) {
   return { maker: parts[0]||'', model: parts[1]||'', frame: parts[2]||'' };
 }
 
+// ===== メモタグ（統合出金消込ツールと同じ埋め込み方式：支払方法・勘定科目を記録） =====
+function parseMemoTag(memo, tag){
+  const m = (memo || '').match(new RegExp('\\[' + tag + ':([^\\]]*)\\]'));
+  return m ? m[1] : '';
+}
+function setMemoTag(memo, tag, value){
+  const re = new RegExp('\\[' + tag + ':[^\\]]*\\]', 'g');
+  let m = (memo || '').replace(re, '').trim();
+  if (value !== null && value !== undefined && value !== '') {
+    m = ('[' + tag + ':' + value + ']' + (m ? ' ' + m : '')).trim();
+  }
+  return m;
+}
+function purchasePayMethodOf(d){ return parseMemoTag(d.memo, '支払方法') || '普通預金'; }
+function purchaseAccountOf(d){ return parseMemoTag(d.memo, '仕入区分') || '仕入高'; }
+function purchaseCleanMemo(memo){
+  let m = setMemoTag(memo, '支払方法', null);
+  m = setMemoTag(m, '仕入区分', null);
+  return m;
+}
+function toggleInCustomFields(){
+  document.getElementById('in-paymethod-custom-field').style.display = (v('in-paymethod') === '__custom') ? '' : 'none';
+  document.getElementById('in-account-custom-field').style.display = (v('in-account') === '__custom') ? '' : 'none';
+  const note = document.getElementById('in-paymethod-note');
+  note.textContent = (v('in-paymethod') === '未収入金')
+    ? '※freeeへの反映は「統合出金消込ツール」の「3. メルカリ内でそのまま仕入・費用に使った場合の消込」で行ってください（下のCSV出力対象からは自動で除外されます）'
+    : '';
+}
+function getInPayMethod(){
+  return v('in-paymethod') === '__custom' ? (v('in-paymethod-custom').trim() || 'その他') : v('in-paymethod');
+}
+function getInAccount(){
+  return v('in-account') === '__custom' ? (v('in-account-custom').trim() || 'その他') : v('in-account');
+}
+function setSelectOrCustom(selectId, customFieldWrapId, customInputId, value, options){
+  const sel = document.getElementById(selectId);
+  if (options.includes(value)) {
+    sel.value = value;
+    document.getElementById(customFieldWrapId).style.display = 'none';
+  } else {
+    sel.value = '__custom';
+    document.getElementById(customFieldWrapId).style.display = '';
+    document.getElementById(customInputId).value = value;
+  }
+}
+
 // ===== タブ =====
 function tab(id, btn) {
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -518,6 +603,11 @@ function submitIn() {
   const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
   const nextIn = (isEditing && existing) ? existing.id : nextInId();
 
+  const payMethod = getInPayMethod();
+  const account = getInAccount();
+  let memoWithTags = setMemoTag(v('in-memo'), '支払方法', payMethod);
+  memoWithTags = setMemoTag(memoWithTags, '仕入区分', account);
+
   const rec = {
     uid: (isEditing && existing) ? existing.uid : uid(),
     id: nextIn,
@@ -533,7 +623,7 @@ function submitIn() {
     name: v('in-name'),
     address: v('in-address'),
     job: v('in-job'),
-    memo: v('in-memo'),
+    memo: memoWithTags,
     sold: (isEditing && existing) ? existing.sold : false,
     createdAt: (isEditing && existing) ? existing.createdAt : new Date().toISOString()
   };
@@ -975,7 +1065,7 @@ function renderList() {
     const soldFlag = isIn && allData.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(entryId));
     return `<div class="entry ${isIn?'in':'out'}" onclick="showDetail('${d.uid}')">
       <div class="e-top">
-        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}${(!isIn && d.payoutDone)?'<span class="sold-tag">出金済</span>':''}</span>
+        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}${(isIn && purchasePayMethodOf(d)==='未収入金')?'<span class="sold-tag">メルカリ残高</span>':''}${(!isIn && d.payoutDone)?'<span class="sold-tag">出金済</span>':''}</span>
         <span class="e-date">${d.date||''}</span>
       </div>
       <div class="e-cat">${d.category||''}</div>
@@ -1058,7 +1148,10 @@ function editEntry() {
     document.getElementById('in-name').value = d.name || '';
     document.getElementById('in-address').value = d.address || '';
     document.getElementById('in-job').value = d.job || '';
-    document.getElementById('in-memo').value = d.memo || '';
+    document.getElementById('in-memo').value = purchaseCleanMemo(d.memo);
+    setSelectOrCustom('in-paymethod', 'in-paymethod-custom-field', 'in-paymethod-custom', purchasePayMethodOf(d), ['普通預金','現金','未収入金']);
+    setSelectOrCustom('in-account', 'in-account-custom-field', 'in-account-custom', purchaseAccountOf(d), ['仕入高','消耗品費','工具器具備品']);
+    toggleInCustomFields();
     document.querySelector('#t-in .btn-primary').textContent = '更新を保存（編集中：受入-' + d.id + '）';
   } else {
     editMode = 'out'; editUID = d.uid;
@@ -1229,16 +1322,20 @@ document.addEventListener('DOMContentLoaded', function() {
   buildPartnerButtons();
   buildServiceQuickButtons();
   buildPlatformFeeButtons();
+  toggleInCustomFields();
 });
 
 // ===== フォームクリア =====
 function v(id) { return (document.getElementById(id)?.value||'').trim(); }
 
 function clearIn() {
-  ['in-category','in-maker','in-model','in-frame','in-price','in-age2','in-idMethod','in-idNo','in-name','in-address','in-job','in-memo']
+  ['in-category','in-maker','in-model','in-frame','in-price','in-age2','in-idMethod','in-idNo','in-name','in-address','in-job','in-memo','in-paymethod-custom','in-account-custom']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('in-qty').value='1';
   document.getElementById('in-date').value = todayISO();
+  document.getElementById('in-paymethod').value = '普通預金';
+  document.getElementById('in-account').value = '仕入高';
+  toggleInCustomFields();
   showInPrice();
   if (editMode === 'in') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); }
   document.querySelector('#t-in .btn-primary').textContent = 'GASに保存';
@@ -1256,7 +1353,7 @@ function clearOut() {
   showPlatformFee();
   calcOutPrice();
   if (editMode === 'out') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); updateLinkedSelect(); }
-  else { renderLinkedOptions(); }
+  else { updateLinkedSelect(); }
   document.querySelector('#t-out .btn-primary').textContent = 'GASに保存';
 }
 
@@ -1845,6 +1942,90 @@ function exportSalesJournalCSV() {
 
   downloadCSV(header, rows, '売上登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
   toast(data.length + '件（' + rows.length + '行）のfreee用CSVを出力しました', 'ok');
+}
+
+// ---- CSV：仕入登録用 ----
+function getPurchaseJournalTargets() {
+  const from = v('purchase-from');
+  const to = v('purchase-to');
+  return load()
+    .filter(d => isInKubun(d.kubun) && (parseInt(d.price) || 0) > 0)
+    .filter(d => (!from || d.date >= from) && (!to || d.date <= to))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+function previewPurchaseJournal() {
+  const all = getPurchaseJournalTargets();
+  const wrap = document.getElementById('purchase-journal-preview');
+  if (!all.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">対象データがありません</p>'; return; }
+
+  const targets = all.filter(d => purchasePayMethodOf(d) !== '未収入金');
+  const skipped = all.filter(d => purchasePayMethodOf(d) === '未収入金');
+
+  let sum = 0;
+  const rows = targets.map(d => {
+    const price = parseInt(d.price) || 0;
+    sum += price;
+    const f = parseFeature(d.feature);
+    const item = [f.maker, f.model].filter(Boolean).join(' ') || d.category || '';
+    return `<tr>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.date}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${item}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${purchaseAccountOf(d)}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${purchasePayMethodOf(d)}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${price.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+
+  let skippedNote = '';
+  if (skipped.length) {
+    const skippedSum = skipped.reduce((s, d) => s + (parseInt(d.price) || 0), 0);
+    skippedNote = '<p style="font-size:12px;color:var(--accent);margin-top:8px">※支払方法が「メルカリ残高」の受入が' + skipped.length + '件（合計¥' + skippedSum.toLocaleString() + '）あります。このCSVには含まれません。「統合出金消込ツール」の「3. メルカリ内でそのまま仕入・費用に使った場合の消込」で処理してください。</p>';
+  }
+
+  wrap.innerHTML = `
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="text-align:left;color:var(--text2)">
+        <th style="padding:4px 8px">日付</th><th style="padding:4px 8px">品名</th>
+        <th style="padding:4px 8px">勘定科目</th><th style="padding:4px 8px">支払方法</th>
+        <th style="padding:4px 8px;text-align:right">金額</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="font-weight:700;border-top:2px solid var(--border)">
+        <td style="padding:4px 8px" colspan="4">合計（${targets.length}件）</td>
+        <td style="padding:4px 8px;text-align:right">¥${sum.toLocaleString()}</td>
+      </tr></tfoot>
+    </table>
+    </div>${skippedNote}`;
+}
+
+function exportPurchaseJournalCSV() {
+  const all = getPurchaseJournalTargets();
+  const data = all.filter(d => purchasePayMethodOf(d) !== '未収入金');
+  if (!data.length) {
+    toast('対象データがありません（メルカリ残高払いのみの場合は統合出金消込ツールをご利用ください）', 'err');
+    return;
+  }
+
+  // freee「仕訳インポート（他社会計ソフトインポート＝振替伝票）」用の列形式（売上登録用CSVと同一仕様）。
+  const header = ['[表題行]', '日付', '伝票No.', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '取引先', '摘要'];
+  const rows = [];
+  let denpyoSeq = 1;
+  data.forEach(d => {
+    const price = parseInt(d.price) || 0;
+    const f = parseFeature(d.feature);
+    const item = [f.maker, f.model].filter(Boolean).join(' ') || d.category || '';
+    const dateSlash = fmtDateSlashFull(d.date);
+    const no = String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号は半角数字のみ
+    const account = purchaseAccountOf(d);
+    const payMethod = purchasePayMethodOf(d);
+    rows.push(['[明細行]', dateSlash, no, account, '課対仕入10%', price, payMethod, '', price, d.name || '', '仕入：' + item]);
+    denpyoSeq++;
+  });
+
+  downloadCSV(header, rows, '仕入登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
+  toast(data.length + '件のfreee用CSVを出力しました', 'ok');
 }
 
 
