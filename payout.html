@@ -97,9 +97,45 @@
   </div>
 
   <div class="card">
-    <h2>3. 出金済の取り消し（誤ってCSVを出力してしまった場合）</h2>
-    <p class="desc">freeeへの取り込みに失敗した等で、「出金済」を取り消して未出金に戻したい場合はここから選んでください。取り消すと、再度「1. 未出金の一覧」に表示されるようになります。</p>
-    <div class="scrollbox" id="paid-list"><p class="empty">「最新の状態を取得」を押すと、出金済の一覧もここに表示されます</p></div>
+    <h2>3. メルカリ内でそのまま仕入・費用に使った場合の消込（銀行を経由しない）</h2>
+    <p class="desc">上の「1. 未出金の一覧」で、銀行に払出す前にメルカリ内の残高で部品などを購入した案件にチェックを入れてから、こちらを使ってください。お金は銀行を経由していないので「普通預金」ではなく、仕入・費用の勘定科目に対して未収入金を直接取り崩す仕訳を作ります。</p>
+    <div class="row2">
+      <div class="field"><label>使用日（メルカリ内で購入した日） *</label><input type="date" id="pu-date"></div>
+      <div class="field">
+        <label>使途の勘定科目 *</label>
+        <select id="pu-account" onchange="togglePuCustom()">
+          <option value="仕入高">仕入高（転売目的の部品仕入）</option>
+          <option value="消耗品費">消耗品費（自社使用の消耗品）</option>
+          <option value="工具器具備品">工具器具備品</option>
+          <option value="荷造運賃">荷造運賃</option>
+          <option value="__custom">その他（自由入力）</option>
+        </select>
+      </div>
+    </div>
+    <div class="field" id="pu-custom-field" style="display:none"><label>勘定科目名（自由入力）</label><input type="text" id="pu-account-custom" placeholder="例：車両部品費"></div>
+    <div class="row2">
+      <div class="field">
+        <label>税区分</label>
+        <select id="pu-tax">
+          <option value="課対仕入10%">課対仕入10%</option>
+          <option value="課対仕入8%（軽減）">課対仕入8%（軽減）</option>
+          <option value="対象外">対象外</option>
+        </select>
+      </div>
+      <div class="field"><label>使った金額（未収入金・自動計算）</label><input type="text" id="pu-amount-disp" disabled></div>
+    </div>
+    <div class="field"><label>摘要・備考</label><input type="text" id="pu-memo" placeholder="例：メルカリ売上金で部品購入（銀行を経由せず）"></div>
+    <div id="pu-selected-info" style="font-size:12px;margin-bottom:8px;color:var(--text2)"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="exportInternalUseJournalCSV()">CSVを出力して消込にする（銀行未経由）</button>
+    </div>
+    <div id="pu-msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>4. 出金済・消込済の取り消し（誤ってCSVを出力してしまった場合）</h2>
+    <p class="desc">freeeへの取り込みに失敗した等で、「出金済」や「消込済（銀行未経由）」を取り消して未出金に戻したい場合はここから選んでください。取り消すと、再度「1. 未出金の一覧」に表示されるようになります。</p>
+    <div class="scrollbox" id="paid-list"><p class="empty">「最新の状態を取得」を押すと、出金済・消込済の一覧もここに表示されます</p></div>
     <div class="btn-group">
       <button class="btn btn-danger" onclick="revertPayout()">選択した案件を未出金に戻す</button>
     </div>
@@ -328,13 +364,13 @@ let paidList = [];
 function getUnifiedPaidList(){
   const list = [];
   bikeEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && payoutDoneOf(d)).forEach(d => {
-    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), raw:d });
+    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), method: parseMemoTag(d.memo,'出金方法') || '銀行', account: parseMemoTag(d.memo,'消込先'), raw:d });
   });
   partsEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && payoutDoneOf(d)).forEach(d => {
-    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), raw:d });
+    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), method: parseMemoTag(d.memo,'出金方法') || '銀行', account: parseMemoTag(d.memo,'消込先'), raw:d });
   });
   loadDocs().filter(d => d.payoutDone).forEach(d => {
-    list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: (parseInt(d.price)||0) - (parseInt(d.fee)||0) - (parseInt(d.shipping)||0), payoutDate: d.payoutDate||'', raw:d });
+    list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: (parseInt(d.price)||0) - (parseInt(d.fee)||0) - (parseInt(d.shipping)||0), payoutDate: d.payoutDate||'', method: d.payoutMethod || '銀行', account: d.payoutAccount || '', raw:d });
   });
   return list.sort((a,b)=> a.date < b.date ? -1 : 1);
 }
@@ -342,11 +378,11 @@ function getUnifiedPaidList(){
 function renderPaidList(){
   paidList = getUnifiedPaidList();
   const wrap = document.getElementById('paid-list');
-  if (!paidList.length){ wrap.innerHTML = '<p class="empty">出金済の記録はありません</p>'; return; }
+  if (!paidList.length){ wrap.innerHTML = '<p class="empty">出金済・消込済の記録はありません</p>'; return; }
   wrap.innerHTML = `
     <table>
       <thead><tr>
-        <th></th><th>区分</th><th>日付</th><th>品名</th><th class="num">未収入金</th><th>出金日</th>
+        <th></th><th>区分</th><th>日付</th><th>品名</th><th class="num">未収入金</th><th>処理日</th><th>方法</th>
       </tr></thead>
       <tbody>
         ${paidList.map(p => `
@@ -357,6 +393,7 @@ function renderPaidList(){
             <td>${p.item}</td>
             <td class="num">¥${p.receivable.toLocaleString()}</td>
             <td>${p.payoutDate||''}</td>
+            <td>${p.method === '銀行' ? '銀行振込' : '内部消化（' + (p.account||p.method) + '）'}</td>
           </tr>`).join('')}
       </tbody>
     </table>`;
@@ -376,11 +413,13 @@ function revertPayout(){
   selectedItems.forEach(p => {
     if (p.source === 'docs'){
       const rec = docsAll.find(d => String(d.id) === String(p.raw.id));
-      if (rec){ rec.payoutDone = false; rec.payoutDate = ''; }
+      if (rec){ rec.payoutDone = false; rec.payoutDate = ''; rec.payoutMethod = ''; rec.payoutAccount = ''; }
     } else {
       const rec = Object.assign({}, p.raw);
       rec.memo = setMemoTag(rec.memo, '出金済', null);
       rec.memo = setMemoTag(rec.memo, '出金日', null);
+      rec.memo = setMemoTag(rec.memo, '出金方法', null);
+      rec.memo = setMemoTag(rec.memo, '消込先', null);
       const url = (p.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
       writebacks.push(fetch(url).then(r=>r.json()));
     }
@@ -412,7 +451,7 @@ function renderPendingList(){
       <tbody>
         ${pendingList.map(p => `
           <tr>
-            <td><input type="checkbox" class="pd-check" value="${p.key}" data-amt="${p.receivable}" checked onchange="updatePayoutDiff()"></td>
+            <td><input type="checkbox" class="pd-check" value="${p.key}" data-amt="${p.receivable}" checked onchange="updateSelectionSummary()"></td>
             <td><span class="src-tag src-${p.source}">${p.label}</span></td>
             <td>${p.date}</td>
             <td>${p.item}</td>
@@ -420,12 +459,16 @@ function renderPendingList(){
           </tr>`).join('')}
       </tbody>
     </table>`;
-  updatePayoutDiff();
+  updateSelectionSummary();
 }
 
 function togglePayoutSelectAll(cb){
   document.querySelectorAll('.pd-check').forEach(el => el.checked = cb.checked);
+  updateSelectionSummary();
+}
+function updateSelectionSummary(){
   updatePayoutDiff();
+  updateInternalUseInfo();
 }
 function getSelectedPayoutTotal(){
   let sum = 0;
@@ -480,11 +523,12 @@ function exportPayoutJournalCSV(){
   selectedItems.forEach(p => {
     if (p.source === 'docs'){
       const rec = docsAll.find(d => String(d.id) === String(p.raw.id));
-      if (rec){ rec.payoutDone = true; rec.payoutDate = payoutDate; }
+      if (rec){ rec.payoutDone = true; rec.payoutDate = payoutDate; rec.payoutMethod = '銀行'; rec.payoutAccount = ''; }
     } else {
       const rec = Object.assign({}, p.raw);
       rec.memo = setMemoTag(rec.memo, '出金済', '1');
       rec.memo = setMemoTag(rec.memo, '出金日', payoutDate);
+      rec.memo = setMemoTag(rec.memo, '出金方法', '銀行');
       const url = (p.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
       writebacks.push(fetch(url).then(r=>r.json()));
     }
@@ -498,6 +542,82 @@ function exportPayoutJournalCSV(){
       msgBox('payout-msg', 'CSVは出力しましたが、GAS側への反映が' + failed + '件失敗しました。「最新の状態を取得」で再確認してください。', 'err');
     } else {
       msgBox('payout-msg', selectedItems.length + '件を出金済にし、CSVを出力しました', 'ok');
+    }
+    refreshPending();
+  });
+}
+
+// ===== メルカリ内でそのまま仕入・費用に使った場合の消込（銀行を経由しない） =====
+function togglePuCustom(){
+  const isCustom = v('pu-account') === '__custom';
+  document.getElementById('pu-custom-field').style.display = isCustom ? '' : 'none';
+}
+function getPuAccountName(){
+  const sel = v('pu-account');
+  if (sel === '__custom') return v('pu-account-custom').trim();
+  return sel;
+}
+function updateInternalUseInfo(){
+  const total = getSelectedPayoutTotal();
+  document.getElementById('pu-amount-disp').value = total ? '¥' + total.toLocaleString() : '';
+  const info = document.getElementById('pu-selected-info');
+  const n = document.querySelectorAll('.pd-check:checked').length;
+  info.textContent = total ? ('「1. 未出金の一覧」で選択中の ' + n + '件・合計 ¥' + total.toLocaleString() + ' を、下記の勘定科目に対して未収入金からそのまま取り崩します。') : '';
+}
+
+function exportInternalUseJournalCSV(){
+  const checks = Array.from(document.querySelectorAll('.pd-check:checked'));
+  if (!checks.length){ msgBox('pu-msg', '「1. 未出金の一覧」で、メルカリ内での購入に使った案件を選択してください', 'err'); return; }
+  const useDate = v('pu-date');
+  const account = getPuAccountName();
+  const tax = v('pu-tax');
+  const memo = v('pu-memo').trim() || 'メルカリ売上金で購入（銀行を経由せず）';
+  if (!useDate){ msgBox('pu-msg', '使用日を入力してください', 'err'); return; }
+  if (!account){ msgBox('pu-msg', '勘定科目を選択（または自由入力）してください', 'err'); return; }
+
+  const selectedKeys = new Set(checks.map(el => el.value));
+  const selectedItems = pendingList.filter(p => selectedKeys.has(p.key));
+  const total = selectedItems.reduce((s,p)=>s+p.receivable, 0);
+  if (!total){ msgBox('pu-msg', '選択した案件の未収入金合計が0円です', 'err'); return; }
+
+  if (!confirm('銀行を経由せず、下記の仕訳をfreee用CSVとして出力します。よろしいですか？\n\n借方：' + account + ' ¥' + total.toLocaleString() + '\n貸方：未収入金 ¥' + total.toLocaleString() + '\n対象：' + selectedItems.length + '件')) return;
+
+  const no = useDate.replace(/-/g,'');
+  const dateSlash = fmtDateSlash(useDate);
+  const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','摘要'];
+  const rows = [
+    ['[明細行]', dateSlash, no, account, tax === '対象外' ? '' : tax, total, '未収入金', '', total, memo],
+  ];
+
+  downloadCSV(header, rows, '内部消化登録_freee用_' + useDate.replace(/-/g,'') + '.csv');
+
+  // 消込済への書き戻し（銀行を経由していないことをタグで区別する）
+  showLoad(true);
+  const writebacks = [];
+  const docsAll = loadDocs();
+  selectedItems.forEach(p => {
+    if (p.source === 'docs'){
+      const rec = docsAll.find(d => String(d.id) === String(p.raw.id));
+      if (rec){ rec.payoutDone = true; rec.payoutDate = useDate; rec.payoutMethod = '内部消化'; rec.payoutAccount = account; }
+    } else {
+      const rec = Object.assign({}, p.raw);
+      rec.memo = setMemoTag(rec.memo, '出金済', '1');
+      rec.memo = setMemoTag(rec.memo, '出金日', useDate);
+      rec.memo = setMemoTag(rec.memo, '出金方法', '内部消化');
+      rec.memo = setMemoTag(rec.memo, '消込先', account);
+      const url = (p.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
+      writebacks.push(fetch(url).then(r=>r.json()));
+    }
+  });
+  saveDocs(docsAll);
+
+  Promise.allSettled(writebacks).then(results => {
+    showLoad(false);
+    const failed = results.filter(r => r.status === 'rejected' || (r.value && r.value.status !== 'ok')).length;
+    if (failed){
+      msgBox('pu-msg', 'CSVは出力しましたが、GAS側への反映が' + failed + '件失敗しました。「最新の状態を取得」で再確認してください。', 'err');
+    } else {
+      msgBox('pu-msg', selectedItems.length + '件を「消込済（内部消化）」にし、CSVを出力しました', 'ok');
     }
     refreshPending();
   });
@@ -720,6 +840,7 @@ function clearAllLocal(){
 
 // ===== 初期化 =====
 document.getElementById('pd-date').value = todayISO();
+document.getElementById('pu-date').value = todayISO();
 document.getElementById('cash-date').value = todayISO();
 document.getElementById('doc-date').value = todayISO();
 renderDocList();
