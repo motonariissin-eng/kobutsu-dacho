@@ -284,7 +284,7 @@
       </div>
     </div>
 
-    <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="out-name"></div>
+    <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="out-name" value="メルカリ購入者様"></div>
     <div class="field"><label>住所</label><input type="text" id="out-address"></div>
     <div class="field"><label>職業</label><input type="text" id="out-job"></div>
     <div class="field"><label>年齢</label><input type="text" inputmode="numeric" id="out-age2"></div>
@@ -1348,10 +1348,11 @@ function clearIn() {
 }
 
 function clearOut() {
-  ['out-linked','out-linked-search','out-category','out-maker','out-model','out-frame','out-age','out-total','out-price','out-age2','out-idMethod','out-idNo','out-name','out-address','out-job','out-memo']
+  ['out-linked','out-linked-search','out-category','out-maker','out-model','out-frame','out-age','out-total','out-price','out-age2','out-idMethod','out-idNo','out-address','out-job','out-memo']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('out-qty').value='1';
   document.getElementById('out-date').value = todayISO();
+  document.getElementById('out-name').value = 'メルカリ購入者様'; // 相手方氏名のデフォルト（必要に応じて修正可）
   const feeEl = document.getElementById('out-platformfee');
   if (feeEl) feeEl.value = '';
   showPlatformFee();
@@ -1512,7 +1513,7 @@ function applyPlatformFee(idx) {
   const p = PLATFORM_FEE_PRESETS[idx];
   if (!p) return;
   const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
-  const fee = Math.round(total * p.rate);
+  const fee = Math.floor(total * p.rate); // 端数は切り捨て（例：¥8888→¥888、¥7777→¥777）
   document.getElementById('out-platformfee').value = fee;
   showPlatformFee();
 }
