@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>統合出金消込ツール</title>
+<style>
+  :root {
+    --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #242424; --border: #2e2e2e;
+    --accent: #e8a020; --text: #e8e8e8; --text2: #999; --danger: #c03030;
+    --in-badge: #1a5a9a; --out-badge: #9a2020;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh; }
+  header { background: var(--surface); border-bottom: 2px solid var(--accent); padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  header h1 { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: 0.05em; }
+  nav { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x:auto; }
+  nav button { flex: 1; padding: 10px 4px; background: none; border: none; border-bottom: 3px solid transparent; color: var(--text2); font-size: 12px; cursor: pointer; white-space:nowrap; }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab { display: none; padding: 12px; }
+  .tab.active { display: block; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; color: var(--accent); margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .card p.desc { font-size: 12px; color: var(--text2); margin-bottom: 10px; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 3px; }
+  .field input, .field select, .field textarea {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); padding: 8px 10px; font-size: 13px; outline: none; font-family: inherit;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; padding: 9px 16px; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-group { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th,td { padding:4px 8px; border-bottom:1px solid var(--border); text-align:left; }
+  th { color:var(--text2); }
+  td.num, th.num { text-align:right; }
+  .src-tag { font-size:10px; padding:1px 6px; border-radius:8px; margin-right:4px; }
+  .src-bike { background:#1a5a9a; }
+  .src-parts { background:#7a4a1a; }
+  .src-docs { background:#2a7a3a; }
+  .empty { font-size:12px; color:var(--text2); padding:10px 0; }
+  .msg { font-size:12px; padding:8px 10px; border-radius:5px; margin-top:8px; }
+  .msg.ok { background:#123; color:#4c8; }
+  .msg.err { background:#311; color:#e66; }
+  .loading { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 500; align-items: center; justify-content: center; color: var(--accent); font-size: 14px; }
+  .loading.show { display: flex; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(80px); background: #222; border: 1px solid var(--border); color: var(--text); padding: 9px 20px; border-radius: 18px; font-size: 13px; z-index: 999; transition: transform .3s; white-space: nowrap; }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast.ok { border-color: #2a7; color: #2a7; }
+  #toast.err { border-color: #c44; color: #c44; }
+  .scrollbox{ overflow-x:auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔗 統合出金消込ツール</h1>
+  <span id="hCount" style="font-size:11px;color:var(--text2)">-</span>
+</header>
+
+<nav>
+  <button class="active" onclick="tab('t-payout',this)">出金消込</button>
+  <button onclick="tab('t-cash',this)">現金化登録</button>
+  <button onclick="tab('t-docs',this)">書類売上登録</button>
+  <button onclick="tab('t-manage',this)">データ管理</button>
+</nav>
+
+<!-- ===== 出金消込 ===== -->
+<div id="t-payout" class="tab active">
+  <div class="card">
+    <h2>1. 未出金の一覧（バイク台帳・小物台帳・書類、3カテゴリ横断）</h2>
+    <p class="desc">1回のメルカリ振込に複数カテゴリの案件が混ざっていても、ここでまとめて選んで消込みできます。まず「最新の状態を取得」を押してください。</p>
+    <div class="btn-group" style="margin-top:0;margin-bottom:10px">
+      <button class="btn btn-primary" onclick="refreshPending()">最新の状態を取得</button>
+    </div>
+    <div id="fetch-status" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
+    <div class="scrollbox" id="payout-pending-list"><p class="empty">「最新の状態を取得」を押してください</p></div>
+  </div>
+
+  <div class="card">
+    <h2>2. 今回の振込情報を入力</h2>
+    <div class="row2">
+      <div class="field"><label>出金日（振込があった日） *</label><input type="date" id="pd-date"></div>
+      <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="pd-fee" placeholder="0" oninput="updatePayoutDiff()"></div>
+    </div>
+    <div class="field"><label>銀行入金額（円） *</label><input type="text" inputmode="numeric" id="pd-bank" placeholder="0" oninput="updatePayoutDiff()"></div>
+    <div id="payout-diff-check" style="font-size:12px;margin-bottom:8px"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="exportPayoutJournalCSV()">CSVを出力して出金済にする</button>
+    </div>
+    <div id="payout-msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. 出金済の取り消し（誤ってCSVを出力してしまった場合）</h2>
+    <p class="desc">freeeへの取り込みに失敗した等で、「出金済」を取り消して未出金に戻したい場合はここから選んでください。取り消すと、再度「1. 未出金の一覧」に表示されるようになります。</p>
+    <div class="scrollbox" id="paid-list"><p class="empty">「最新の状態を取得」を押すと、出金済の一覧もここに表示されます</p></div>
+    <div class="btn-group">
+      <button class="btn btn-danger" onclick="revertPayout()">選択した案件を未出金に戻す</button>
+    </div>
+    <div id="revert-msg"></div>
+  </div>
+</div>
+
+<!-- ===== 現金化登録 ===== -->
+<div id="t-cash" class="tab">
+  <div class="card">
+    <h2>現金化（普通預金 → 現金）を登録</h2>
+    <p class="desc">売上のカテゴリに関係なく、銀行から引き出して現金化した金額をそのまま登録します。売上・仕入とは無関係の「資産の振替」です。</p>
+    <div class="row2">
+      <div class="field"><label>日付 *</label><input type="date" id="cash-date"></div>
+      <div class="field"><label>現金化した金額（円） *</label><input type="text" inputmode="numeric" id="cash-amount" placeholder="0"></div>
+    </div>
+    <div class="field"><label>備考（任意）</label><input type="text" id="cash-memo" placeholder="例：ATM引き出し"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="addCashRecord()">登録する</button>
+    </div>
+    <div id="cash-add-msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>登録済みの現金化一覧</h2>
+    <div class="scrollbox" id="cash-list"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="exportCashCSV()">選択分をfreee用CSVで出力</button>
+    </div>
+    <div id="cash-export-msg"></div>
+  </div>
+</div>
+
+<!-- ===== 書類売上登録 ===== -->
+<div id="t-docs" class="tab">
+  <div class="card">
+    <h2>書類売上を登録</h2>
+    <p class="desc">古物台帳の対象にならない「書類」などの売上を記録します。出金消込は「出金消込」タブでバイク・小物とまとめて行います。</p>
+    <div class="row2">
+      <div class="field"><label>日付 *</label><input type="date" id="doc-date"></div>
+      <div class="field"><label>販売金額（円） *</label><input type="text" inputmode="numeric" id="doc-price" placeholder="300"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>販売手数料（円）</label><input type="text" inputmode="numeric" id="doc-fee" placeholder="30"></div>
+      <div class="field"><label>送料・荷造り料金（円）</label><input type="text" inputmode="numeric" id="doc-shipping" placeholder="210"></div>
+    </div>
+    <div class="field"><label>品名・内容</label><input type="text" id="doc-item" placeholder="例：登録書類発行"></div>
+    <div class="field"><label>売却先（任意）</label><input type="text" id="doc-name" placeholder="例：メルカリ購入者"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="addDocRecord()">追加する</button>
+    </div>
+    <div id="doc-add-msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>登録済みの一覧</h2>
+    <div class="scrollbox" id="doc-list"></div>
+  </div>
+
+  <div class="card">
+    <h2>CSV：書類の売上登録用（未収入金／売上高）</h2>
+    <p class="desc">未出金の記録から仕訳を出力します。freeeの［取引入力］→［振替伝票］→［インポート］で取り込んでください。</p>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="exportDocSalesJournalCSV()">CSVを出力</button>
+    </div>
+    <div id="doc-sales-msg"></div>
+  </div>
+</div>
+
+<!-- ===== データ管理 ===== -->
+<div id="t-manage" class="tab">
+  <div class="card">
+    <h2>旧・書類売上記録ツールからの移行</h2>
+    <p class="desc">以前の「書類売上記録ツール」で出力した「全件CSVバックアップ」ファイルを取り込んで、このツールに引き継ぎます。</p>
+    <input type="file" id="import-file" accept=".csv" onchange="importDocBackup(event)">
+    <div id="import-msg"></div>
+  </div>
+  <div class="card">
+    <h2>書類データのバックアップ</h2>
+    <div class="btn-group" style="margin-top:0">
+      <button class="btn btn-secondary" onclick="exportDocBackupCSV()">書類データを全件CSVバックアップ</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>現金化データのバックアップ</h2>
+    <div class="btn-group" style="margin-top:0">
+      <button class="btn btn-secondary" onclick="exportCashBackupCSV()">現金化データを全件CSVバックアップ</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>全データ削除（このツールのローカルデータのみ）</h2>
+    <p class="desc">バイク台帳・小物台帳のGAS側データには影響しません。書類・現金化のローカルデータのみ削除します。</p>
+    <div class="btn-group" style="margin-top:0">
+      <button class="btn btn-danger" onclick="clearAllLocal()">全データ削除</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading" id="loading"><span>処理中...</span></div>
+<div id="toast"></div>
+
+<script>
+// ===== 設定：既存の台帳2つのGASエンドポイント（各ファイルの<script>内 const GAS と同じもの） =====
+const GAS_BIKE = 'https://script.google.com/macros/s/AKfycbyzPq8wPrhrlkNExoz0vppHMnbwMZxMxUhtsBo9hGt2gMr54FyHhkm77ywET7hOB0Zi/exec';
+const GAS_PARTS = 'https://script.google.com/macros/s/AKfycbzbR0hubVD_B0bJSyxLUe1bhxYkFBFU_UhzuulJNqB_WjMJ9DHSnMJ1E5l2oCjLwdlu/exec';
+const LS_DOCS = 'doc_sales_records_v1'; // 旧・書類売上記録ツールと同じキー名（同ブラウザなら引き継がれる場合あり）
+const LS_CASH = 'cash_conversions_v1';
+
+let bikeEntries = [];
+let partsEntries = [];
+let pendingList = []; // 統合済みの未出金一覧（レンダリング時に作る。checkbox value のキーで検索できるようにする）
+
+// ===== 共通ユーティリティ =====
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function fmtDateSlash(iso){
+  if (!iso) return '';
+  const p = String(iso).split(/[-/]/);
+  return p.length === 3 ? p.join('/') : iso;
+}
+function toast(msg, type){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'show' + (type ? ' '+type : '');
+  clearTimeout(window._toastT); window._toastT = setTimeout(()=>{ el.className=''; }, 4000);
+}
+function msgBox(elId, text, type){
+  const el = document.getElementById(elId);
+  el.innerHTML = '<div class="msg '+type+'">'+text+'</div>';
+  setTimeout(()=>{ if (el.innerHTML.includes(text)) el.innerHTML=''; }, 5000);
+}
+function showLoad(on){
+  document.getElementById('loading').className = 'loading' + (on?' show':'');
+}
+function downloadCSV(header, rows, filename){
+  const esc = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
+  const csv = [header.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8'}));
+  a.download = filename;
+  a.click();
+}
+function num(id){ return parseInt((document.getElementById(id)?.value||'').replace(/,/g,'')) || 0; }
+function v(id){ return document.getElementById(id)?.value || ''; }
+
+// ===== メモタグ（バイク・小物台帳と同じ埋め込み方式） =====
+function parseMemoTag(memo, tag){
+  const m = (memo || '').match(new RegExp('\\[' + tag + ':([^\\]]*)\\]'));
+  return m ? m[1] : '';
+}
+function setMemoTag(memo, tag, value){
+  const re = new RegExp('\\[' + tag + ':[^\\]]*\\]', 'g');
+  let m = (memo || '').replace(re, '').trim();
+  if (value !== null && value !== undefined && value !== '') {
+    m = ('[' + tag + ':' + value + ']' + (m ? ' ' + m : '')).trim();
+  }
+  return m;
+}
+function isOutKubun(k){ return k && k.includes('払出'); }
+function salesAmountOf(rec){
+  const t = parseInt(rec.totalPrice) || 0;
+  if (t > 0) return t;
+  return parseInt(rec.price) || 0;
+}
+function platformFeeOf(rec){ return parseInt(parseMemoTag(rec.memo, '手数料')) || 0; }
+function payoutDoneOf(rec){ return parseMemoTag(rec.memo, '出金済') === '1'; }
+
+// ===== タブ切替 =====
+function tab(id, btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+  if (id === 't-cash') renderCashList();
+  if (id === 't-docs') renderDocList();
+}
+
+// ===== localStorage（書類・現金化） =====
+function loadDocs(){ try { return JSON.parse(localStorage.getItem(LS_DOCS) || '[]'); } catch(e){ return []; } }
+function saveDocs(d){ localStorage.setItem(LS_DOCS, JSON.stringify(d)); }
+function loadCash(){ try { return JSON.parse(localStorage.getItem(LS_CASH) || '[]'); } catch(e){ return []; } }
+function saveCash(d){ localStorage.setItem(LS_CASH, JSON.stringify(d)); }
+
+// ===== 出金消込：GASから取得 =====
+function fetchGAS(url){
+  return fetch(url).then(r=>r.json()).then(res=>{
+    if (res && Array.isArray(res.entries)) return res.entries;
+    throw new Error('想定外の応答形式');
+  });
+}
+
+function refreshPending(){
+  const statusEl = document.getElementById('fetch-status');
+  statusEl.textContent = '取得中...';
+  showLoad(true);
+  Promise.allSettled([fetchGAS(GAS_BIKE), fetchGAS(GAS_PARTS)]).then(([bikeRes, partsRes])=>{
+    showLoad(false);
+    const errors = [];
+    if (bikeRes.status === 'fulfilled') bikeEntries = bikeRes.value;
+    else { bikeEntries = []; errors.push('バイク台帳の取得に失敗：' + bikeRes.reason.message); }
+    if (partsRes.status === 'fulfilled') partsEntries = partsRes.value;
+    else { partsEntries = []; errors.push('小物台帳の取得に失敗：' + partsRes.reason.message); }
+    statusEl.innerHTML = errors.length
+      ? '<span style="color:#e66">' + errors.join('／') + '</span>'
+      : '<span style="color:#4c8">取得完了（バイク' + bikeEntries.length + '件・小物' + partsEntries.length + '件のデータを確認しました）</span>';
+    renderPendingList();
+    renderPaidList();
+  });
+}
+
+function getUnifiedPendingList(){
+  const list = [];
+  bikeEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && !payoutDoneOf(d)).forEach(d => {
+    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), raw:d });
+  });
+  partsEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && !payoutDoneOf(d)).forEach(d => {
+    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), raw:d });
+  });
+  loadDocs().filter(d => !d.payoutDone).forEach(d => {
+    list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: (parseInt(d.price)||0) - (parseInt(d.fee)||0) - (parseInt(d.shipping)||0), raw:d });
+  });
+  return list.sort((a,b)=> a.date < b.date ? -1 : 1);
+}
+
+// ===== 出金済の取り消し =====
+let paidList = [];
+
+function getUnifiedPaidList(){
+  const list = [];
+  bikeEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && payoutDoneOf(d)).forEach(d => {
+    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), raw:d });
+  });
+  partsEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && payoutDoneOf(d)).forEach(d => {
+    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), raw:d });
+  });
+  loadDocs().filter(d => d.payoutDone).forEach(d => {
+    list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: (parseInt(d.price)||0) - (parseInt(d.fee)||0) - (parseInt(d.shipping)||0), payoutDate: d.payoutDate||'', raw:d });
+  });
+  return list.sort((a,b)=> a.date < b.date ? -1 : 1);
+}
+
+function renderPaidList(){
+  paidList = getUnifiedPaidList();
+  const wrap = document.getElementById('paid-list');
+  if (!paidList.length){ wrap.innerHTML = '<p class="empty">出金済の記録はありません</p>'; return; }
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th></th><th>区分</th><th>日付</th><th>品名</th><th class="num">未収入金</th><th>出金日</th>
+      </tr></thead>
+      <tbody>
+        ${paidList.map(p => `
+          <tr>
+            <td><input type="checkbox" class="paid-check" value="${p.key}"></td>
+            <td><span class="src-tag src-${p.source}">${p.label}</span></td>
+            <td>${p.date}</td>
+            <td>${p.item}</td>
+            <td class="num">¥${p.receivable.toLocaleString()}</td>
+            <td>${p.payoutDate||''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function revertPayout(){
+  const checks = Array.from(document.querySelectorAll('.paid-check:checked'));
+  if (!checks.length){ msgBox('revert-msg', '未出金に戻す案件を選択してください', 'err'); return; }
+  if (!confirm(checks.length + '件を「未出金」に戻します。よろしいですか？（freeeにまだ取り込まれていない場合のみ行ってください）')) return;
+
+  const selectedKeys = new Set(checks.map(el => el.value));
+  const selectedItems = paidList.filter(p => selectedKeys.has(p.key));
+
+  showLoad(true);
+  const writebacks = [];
+  const docsAll = loadDocs();
+  selectedItems.forEach(p => {
+    if (p.source === 'docs'){
+      const rec = docsAll.find(d => String(d.id) === String(p.raw.id));
+      if (rec){ rec.payoutDone = false; rec.payoutDate = ''; }
+    } else {
+      const rec = Object.assign({}, p.raw);
+      rec.memo = setMemoTag(rec.memo, '出金済', null);
+      rec.memo = setMemoTag(rec.memo, '出金日', null);
+      const url = (p.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
+      writebacks.push(fetch(url).then(r=>r.json()));
+    }
+  });
+  saveDocs(docsAll);
+
+  Promise.allSettled(writebacks).then(results => {
+    showLoad(false);
+    const failed = results.filter(r => r.status === 'rejected' || (r.value && r.value.status !== 'ok')).length;
+    if (failed){
+      msgBox('revert-msg', '一部反映に失敗しました（' + failed + '件）。「最新の状態を取得」で再確認してください。', 'err');
+    } else {
+      msgBox('revert-msg', selectedItems.length + '件を未出金に戻しました', 'ok');
+    }
+    refreshPending();
+  });
+}
+
+function renderPendingList(){
+  pendingList = getUnifiedPendingList();
+  const wrap = document.getElementById('payout-pending-list');
+  if (!pendingList.length){ wrap.innerHTML = '<p class="empty">未出金の記録はありません</p>'; return; }
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th><input type="checkbox" checked onchange="togglePayoutSelectAll(this)"></th>
+        <th>区分</th><th>日付</th><th>品名</th><th class="num">未収入金</th>
+      </tr></thead>
+      <tbody>
+        ${pendingList.map(p => `
+          <tr>
+            <td><input type="checkbox" class="pd-check" value="${p.key}" data-amt="${p.receivable}" checked onchange="updatePayoutDiff()"></td>
+            <td><span class="src-tag src-${p.source}">${p.label}</span></td>
+            <td>${p.date}</td>
+            <td>${p.item}</td>
+            <td class="num">¥${p.receivable.toLocaleString()}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  updatePayoutDiff();
+}
+
+function togglePayoutSelectAll(cb){
+  document.querySelectorAll('.pd-check').forEach(el => el.checked = cb.checked);
+  updatePayoutDiff();
+}
+function getSelectedPayoutTotal(){
+  let sum = 0;
+  document.querySelectorAll('.pd-check:checked').forEach(el => sum += parseInt(el.dataset.amt) || 0);
+  return sum;
+}
+function updatePayoutDiff(){
+  const box = document.getElementById('payout-diff-check');
+  const selectedTotal = getSelectedPayoutTotal();
+  const bank = num('pd-bank');
+  const fee = num('pd-fee');
+  if (!selectedTotal){ box.innerHTML=''; return; }
+  const diff = selectedTotal - (bank + fee);
+  if (diff === 0){
+    box.innerHTML = '<span style="color:var(--accent)">選択した未収入金合計 ¥' + selectedTotal.toLocaleString() + ' と、銀行入金額＋振込手数料が一致しています ✓</span>';
+  } else {
+    box.innerHTML = '<span style="color:#e66">選択した未収入金合計 ¥' + selectedTotal.toLocaleString() + ' に対して、差額 ¥' + diff.toLocaleString() + ' あります</span>';
+  }
+}
+
+function exportPayoutJournalCSV(){
+  const checks = Array.from(document.querySelectorAll('.pd-check:checked'));
+  if (!checks.length){ msgBox('payout-msg', '出金に含める案件を選択してください', 'err'); return; }
+  const payoutDate = v('pd-date');
+  const bank = num('pd-bank');
+  const fee = num('pd-fee');
+  if (!payoutDate || !bank){ msgBox('payout-msg', '出金日・銀行入金額を入力してください', 'err'); return; }
+
+  const selectedKeys = new Set(checks.map(el => el.value));
+  const selectedItems = pendingList.filter(p => selectedKeys.has(p.key));
+  const receivableTotal = selectedItems.reduce((s,p)=>s+p.receivable, 0);
+
+  if (receivableTotal !== bank + fee){
+    if (!confirm('未収入金合計と（銀行入金額＋振込手数料）が一致していません。\n未収入金合計：¥' + receivableTotal.toLocaleString() + '\n銀行入金額＋手数料：¥' + (bank+fee).toLocaleString() + '\n\nこのまま続けますか？')) return;
+  }
+
+  const no = payoutDate.replace(/-/g,'');
+  const dateSlash = fmtDateSlash(payoutDate);
+  const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','摘要'];
+  const rows = [
+    ['[明細行]', dateSlash, no, '普通預金', '', bank, '', '', '', 'メルカリ売上の振込入金（バイク・小物・書類 統合消込）'],
+  ];
+  if (fee > 0) rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '', '', '', '振込手数料']);
+  rows.push(['[明細行]', dateSlash, no, '', '', '', '未収入金', '', receivableTotal, '未収入金の取り崩し']);
+
+  downloadCSV(header, rows, '統合出金登録_freee用_' + payoutDate.replace(/-/g,'') + '.csv');
+
+  // 出金済への書き戻し
+  showLoad(true);
+  const writebacks = [];
+  const docsAll = loadDocs();
+  selectedItems.forEach(p => {
+    if (p.source === 'docs'){
+      const rec = docsAll.find(d => String(d.id) === String(p.raw.id));
+      if (rec){ rec.payoutDone = true; rec.payoutDate = payoutDate; }
+    } else {
+      const rec = Object.assign({}, p.raw);
+      rec.memo = setMemoTag(rec.memo, '出金済', '1');
+      rec.memo = setMemoTag(rec.memo, '出金日', payoutDate);
+      const url = (p.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
+      writebacks.push(fetch(url).then(r=>r.json()));
+    }
+  });
+  saveDocs(docsAll);
+
+  Promise.allSettled(writebacks).then(results => {
+    showLoad(false);
+    const failed = results.filter(r => r.status === 'rejected' || (r.value && r.value.status !== 'ok')).length;
+    if (failed){
+      msgBox('payout-msg', 'CSVは出力しましたが、GAS側への反映が' + failed + '件失敗しました。「最新の状態を取得」で再確認してください。', 'err');
+    } else {
+      msgBox('payout-msg', selectedItems.length + '件を出金済にし、CSVを出力しました', 'ok');
+    }
+    refreshPending();
+  });
+}
+
+// ===== 現金化登録 =====
+function addCashRecord(){
+  const date = v('cash-date');
+  const amount = num('cash-amount');
+  const memo = v('cash-memo');
+  if (!date || !amount){ msgBox('cash-add-msg', '日付と金額を入力してください', 'err'); return; }
+  const data = loadCash();
+  const id = data.length ? Math.max(...data.map(d=>d.id)) + 1 : 1;
+  data.push({ id, date, amount, memo, exported:false });
+  saveCash(data);
+  document.getElementById('cash-amount').value = '';
+  document.getElementById('cash-memo').value = '';
+  msgBox('cash-add-msg', '登録しました', 'ok');
+  renderCashList();
+}
+function deleteCashRecord(id){
+  if (!confirm('この記録を削除しますか？')) return;
+  saveCash(loadCash().filter(d => d.id !== id));
+  renderCashList();
+}
+function renderCashList(){
+  const data = loadCash().sort((a,b)=> a.date < b.date ? 1 : -1);
+  const wrap = document.getElementById('cash-list');
+  if (!data.length){ wrap.innerHTML = '<p class="empty">まだ記録がありません</p>'; return; }
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th><input type="checkbox" checked onchange="document.querySelectorAll('.cash-check').forEach(el=>el.checked=this.checked)"></th>
+        <th>日付</th><th class="num">金額</th><th>備考</th><th>状態</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${data.map(d => `
+          <tr>
+            <td><input type="checkbox" class="cash-check" value="${d.id}" ${d.exported ? '' : 'checked'}></td>
+            <td>${d.date}</td>
+            <td class="num">¥${d.amount.toLocaleString()}</td>
+            <td>${d.memo||''}</td>
+            <td>${d.exported ? '出力済' : '未出力'}</td>
+            <td><button class="btn btn-secondary" style="padding:3px 8px;font-size:11px" onclick="deleteCashRecord(${d.id})">削除</button></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+function exportCashCSV(){
+  const checks = Array.from(document.querySelectorAll('.cash-check:checked'));
+  if (!checks.length){ msgBox('cash-export-msg', '出力する記録を選択してください', 'err'); return; }
+  const ids = checks.map(el => parseInt(el.value));
+  const data = loadCash();
+  const targets = data.filter(d => ids.includes(d.id));
+
+  const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','摘要'];
+  const rows = [];
+  const seq = {};
+  targets.forEach(d => {
+    const dateSlash = fmtDateSlash(d.date);
+    const base = d.date.replace(/-/g,'');
+    seq[base] = (seq[base]||0) + 1;
+    const no = base + String(seq[base]).padStart(2,'0');
+    rows.push(['[明細行]', dateSlash, no, '現金', '', d.amount, '普通預金', '', d.amount, d.memo || '現金化（ATM出金）']);
+  });
+
+  downloadCSV(header, rows, '現金化登録_freee用_' + todayISO().replace(/-/g,'') + '.csv');
+
+  data.forEach(d => { if (ids.includes(d.id)) d.exported = true; });
+  saveCash(data);
+  msgBox('cash-export-msg', targets.length + '件を出力し、出力済にしました', 'ok');
+  renderCashList();
+}
+
+// ===== 書類売上登録 =====
+function addDocRecord(){
+  const date = v('doc-date');
+  const price = num('doc-price');
+  const fee = num('doc-fee');
+  const shipping = num('doc-shipping');
+  const item = v('doc-item').trim();
+  const name = v('doc-name').trim();
+  if (!date || !price){ msgBox('doc-add-msg', '日付と金額を入力してください', 'err'); return; }
+  if (fee + shipping > price){ msgBox('doc-add-msg', '手数料＋送料が販売金額を超えています', 'err'); return; }
+  const data = loadDocs();
+  const id = data.length ? Math.max(...data.map(d=>d.id)) + 1 : 1;
+  data.push({ id, date, price, fee, shipping, item, name, payoutDone:false, payoutDate:'' });
+  saveDocs(data);
+  document.getElementById('doc-item').value = '';
+  document.getElementById('doc-name').value = '';
+  msgBox('doc-add-msg', '登録しました', 'ok');
+  renderDocList();
+}
+function deleteDocRecord(id){
+  if (!confirm('この記録を削除しますか？')) return;
+  saveDocs(loadDocs().filter(d => d.id !== id));
+  renderDocList();
+}
+function renderDocList(){
+  const data = loadDocs().sort((a,b)=> a.date < b.date ? 1 : -1);
+  const wrap = document.getElementById('doc-list');
+  if (!data.length){ wrap.innerHTML = '<p class="empty">まだ記録がありません</p>'; return; }
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>日付</th><th>品名</th><th>売却先</th>
+        <th class="num">販売金額</th><th class="num">未収入金</th><th>状態</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${data.map(d => `
+          <tr>
+            <td>${d.date}</td>
+            <td>${d.item||''}</td>
+            <td>${d.name||''}</td>
+            <td class="num">¥${d.price.toLocaleString()}</td>
+            <td class="num">¥${(d.price - (d.fee||0) - (d.shipping||0)).toLocaleString()}</td>
+            <td>${d.payoutDone ? '出金済（'+d.payoutDate+'）' : '未出金'}</td>
+            <td><button class="btn btn-secondary" style="padding:3px 8px;font-size:11px" onclick="deleteDocRecord(${d.id})">削除</button></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+function exportDocSalesJournalCSV(){
+  const data = loadDocs().filter(d => !d.payoutDone);
+  if (!data.length){ msgBox('doc-sales-msg', '対象データがありません（未出金の記録がありません）', 'err'); return; }
+  const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','取引先','摘要'];
+  const rows = [];
+  data.forEach(d => {
+    const dateSlash = fmtDateSlash(d.date);
+    const no = 'S' + String(d.id);
+    const item = d.item || '書類';
+    const fee = d.fee || 0;
+    const shipping = d.shipping || 0;
+    rows.push(['[明細行]', dateSlash, no, '未収入金', '', d.price, '売上高', '課税売上10%', d.price, d.name || '', '売却：' + item]);
+    if (fee > 0) rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '未収入金', '', fee, d.name || '', '販売手数料：' + item]);
+    if (shipping > 0) rows.push(['[明細行]', dateSlash, no, '荷造運賃', '課対仕入10%', shipping, '未収入金', '', shipping, d.name || '', '送料・荷造り料金：' + item]);
+  });
+  downloadCSV(header, rows, '書類売上登録_freee用_' + todayISO().replace(/-/g,'') + '.csv');
+  msgBox('doc-sales-msg', data.length + '件のfreee用CSVを出力しました', 'ok');
+}
+
+// ===== データ管理 =====
+function parseCSV(text){
+  const lines = text.replace(/^\uFEFF/, '').split(/\r\n|\n/).filter(l => l.length);
+  return lines.map(line => {
+    const cells = []; let cur = ''; let inQ = false;
+    for (let i=0; i<line.length; i++){
+      const c = line[i];
+      if (inQ){
+        if (c === '"'){ if (line[i+1] === '"'){ cur += '"'; i++; } else inQ = false; }
+        else cur += c;
+      } else {
+        if (c === '"') inQ = true;
+        else if (c === ','){ cells.push(cur); cur=''; }
+        else cur += c;
+      }
+    }
+    cells.push(cur);
+    return cells;
+  });
+}
+function importDocBackup(evt){
+  const file = evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const rows = parseCSV(reader.result);
+      const headerRow = rows[0];
+      const dataRows = rows.slice(1);
+      const idx = k => headerRow.indexOf(k);
+      const existing = loadDocs();
+      let nextId = existing.length ? Math.max(...existing.map(d=>d.id)) + 1 : 1;
+      let added = 0;
+      dataRows.forEach(cells => {
+        const rec = {
+          id: nextId++,
+          date: cells[idx('date')] || '',
+          item: cells[idx('item')] || '',
+          name: cells[idx('name')] || '',
+          price: parseInt(cells[idx('price')]) || 0,
+          fee: parseInt(cells[idx('fee')]) || 0,
+          shipping: parseInt(cells[idx('shipping')]) || 0,
+          payoutDone: cells[idx('payoutDone')] === 'true',
+          payoutDate: cells[idx('payoutDate')] || ''
+        };
+        if (!rec.date || !rec.price) return;
+        existing.push(rec);
+        added++;
+      });
+      saveDocs(existing);
+      msgBox('import-msg', added + '件を取り込みました', 'ok');
+      renderDocList();
+    } catch(e){
+      msgBox('import-msg', '取り込みに失敗しました：' + e.message, 'err');
+    }
+    evt.target.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+function exportDocBackupCSV(){
+  const data = loadDocs();
+  if (!data.length){ alert('データがありません'); return; }
+  const keys = ['id','date','item','name','price','fee','shipping','payoutDone','payoutDate'];
+  downloadCSV(keys, data.map(d => keys.map(k => d[k])), '書類売上_バックアップ_' + todayISO().replace(/-/g,'') + '.csv');
+}
+function exportCashBackupCSV(){
+  const data = loadCash();
+  if (!data.length){ alert('データがありません'); return; }
+  const keys = ['id','date','amount','memo','exported'];
+  downloadCSV(keys, data.map(d => keys.map(k => d[k])), '現金化_バックアップ_' + todayISO().replace(/-/g,'') + '.csv');
+}
+function clearAllLocal(){
+  if (!confirm('書類・現金化のローカルデータを全て削除します。よろしいですか？（GAS側のバイク・小物データは削除されません）')) return;
+  localStorage.removeItem(LS_DOCS);
+  localStorage.removeItem(LS_CASH);
+  renderDocList(); renderCashList();
+  toast('削除しました', 'ok');
+}
+
+// ===== 初期化 =====
+document.getElementById('pd-date').value = todayISO();
+document.getElementById('cash-date').value = todayISO();
+document.getElementById('doc-date').value = todayISO();
+renderDocList();
+renderCashList();
+</script>
+</body>
+</html>
