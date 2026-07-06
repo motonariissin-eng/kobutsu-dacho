@@ -280,7 +280,17 @@
       </div>
     </div>
 
-    <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="out-name"></div>
+    <div class="field">
+      <label>相手方氏名・商号 *</label>
+      <select id="out-channel" onchange="fillChannel()" style="margin-bottom:6px">
+        <option value="">取引先を選択...</option>
+        <option value="メルカリ">メルカリ</option>
+        <option value="ヤフオク">ヤフオク</option>
+        <option value="ジモティ">ジモティ</option>
+        <option value="直接取引">直接取引</option>
+      </select>
+      <input type="text" id="out-name">
+    </div>
     <div class="field"><label>住所</label><input type="text" id="out-address"></div>
     <div class="field"><label>職業</label><input type="text" id="out-job"></div>
     <div class="field"><label>年齢</label><input type="text" inputmode="numeric" id="out-age2"></div>
@@ -1274,6 +1284,18 @@ function renderLinkedOptions() {
   }
 }
 
+// ===== 払出：取引先プルダウン（氏名欄への反映） =====
+// メルカリ・ジモティは相手方の実名が分からないことが多いため、取引先名をそのまま氏名欄に入れる。
+// 直接取引の場合は実名を手入力するため、氏名欄を空にしてフォーカスするだけにする。
+function fillChannel() {
+  const sel = document.getElementById('out-channel');
+  const nameEl = document.getElementById('out-name');
+  const val = sel.value;
+  if (!val) return;
+  nameEl.value = (val === '直接取引') ? '' : val;
+  nameEl.focus();
+}
+
 // ===== 業者マスタ（固定4件） =====
 const PARTNERS = [
   { label: 'モトレボ',  name: '株式会社 モトレボ 渡部伸正', address: '埼玉県所沢市中富280-3',         job: '古物商', age: '',   idMethod: '古物商同士の取引', idNo: '' },
@@ -1352,6 +1374,8 @@ function clearOut() {
   if (feeEl) feeEl.value = '';
   showPlatformFee();
   calcOutPrice();
+  const channelEl = document.getElementById('out-channel');
+  if (channelEl) channelEl.value = '';
   if (editMode === 'out') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); updateLinkedSelect(); }
   else { updateLinkedSelect(); }
   document.querySelector('#t-out .btn-primary').textContent = 'GASに保存';
