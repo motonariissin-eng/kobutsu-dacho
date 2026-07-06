@@ -154,6 +154,14 @@
     <div class="next-id" id="nextInId">受入番号: 計算中...</div>
     <h2>受入（買受）登録</h2>
 
+    <div class="field">
+      <label>取得の由来（仕入ではない場合のクイック入力）</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="quickOrigin('attached')">🏍 バイクに付属していた（無償）</button>
+        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="quickOrigin('gift')">🎁 無償で譲り受けた</button>
+      </div>
+    </div>
+
     <div class="field"><label>取引年月日 *</label><input type="date" id="in-date"></div>
     <div class="field">
       <label>品目 *</label>
@@ -195,14 +203,6 @@
     <div class="field" id="in-paymethod-custom-field" style="display:none"><label>支払方法名（自由入力）</label><input type="text" id="in-paymethod-custom" placeholder="例：法人カード"></div>
     <div class="field" id="in-account-custom-field" style="display:none"><label>勘定科目名（自由入力）</label><input type="text" id="in-account-custom" placeholder="例：車両部品費"></div>
     <div id="in-paymethod-note" style="font-size:11px;color:var(--text2);margin-top:-4px;margin-bottom:10px"></div>
-
-    <div class="field">
-      <label>取得の由来（仕入ではない場合のクイック入力）</label>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="quickOrigin('attached')">🏍 バイクに付属していた（無償）</button>
-        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="quickOrigin('gift')">🎁 無償で譲り受けた</button>
-      </div>
-    </div>
 
     <div class="field">
       <label>相手方クイック入力</label>
@@ -1478,6 +1478,10 @@ function selectBikeRefByIndex(i) {
   const item = (r.feature || '').replace(/\n/g, ' ');
   applyOriginMemo('[由来:バイク付属][対応バイク受入:' + r.id + '] バイク台帳 受入-' + r.id + (item ? '（' + item + '）' : '') + ' に付属');
 
+  // 受入年月日も引用（バイクの受入日＝部品を取得した日と同一のため）
+  const quotedDate = normalizeDateStr(r.date);
+  if (quotedDate) document.getElementById('in-date').value = quotedDate;
+
   // 相手方情報も引用（バイク受入時の取引相手＝この部品の出所と同一人物のため）
   document.getElementById('in-name').value = r.name || '';
   document.getElementById('in-address').value = r.address || '';
@@ -1487,7 +1491,7 @@ function selectBikeRefByIndex(i) {
   document.getElementById('in-idNo').value = r.idNo || '';
 
   closeBikeRefModal();
-  toast('取得価格を0円にし、引用元・相手方情報を反映しました', 'ok');
+  toast('取得価格を0円にし、引用元・取引年月日・相手方情報を反映しました', 'ok');
 }
 
 // ===== 払出：金額表示 =====
