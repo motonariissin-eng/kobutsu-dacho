@@ -332,6 +332,12 @@
       <option>バックレスト</option><option>リアキャリア</option><option>リアボックス</option>
       <option>工具</option><option>ETC</option><option>マフラー</option>
     </select>
+    <select id="f-pay" onchange="renderList()">
+      <option value="">支払・入金方法（全て）</option>
+      <option value="現金">現金</option>
+      <option value="口座">口座（普通預金・銀行）</option>
+      <option value="その他">その他（メルカリ残高等）</option>
+    </select>
     <input type="text" id="f-text" placeholder="車名・車台番号・相手方で検索" oninput="renderList()">
   </div>
   <div id="list-body" class="list"><p style="color:var(--text2);text-align:center;padding:20px">読み込み中...</p></div>
@@ -1070,12 +1076,23 @@ function displayPrice(d) {
 function renderList() {
   const kubun = document.getElementById('f-kubun').value;
   const cat = document.getElementById('f-cat').value;
+  const pay = document.getElementById('f-pay').value;
   const txt = document.getElementById('f-text').value.toLowerCase();
+
+  function payGroupOf(d) {
+    const isIn = isInKubun(d.kubun);
+    const raw = isIn ? purchasePayMethodOf(d) : receiveMethodOf(d);
+    if (raw === '現金') return '現金';
+    if (isIn && raw === '普通預金') return '口座';
+    if (!isIn && raw === '口座') return '口座';
+    return 'その他';
+  }
 
   let data = load().filter(d => {
     if (kubun === '受入' && !isInKubun(d.kubun)) return false;
     if (kubun === '払出' && !isOutKubun(d.kubun)) return false;
     if (cat && d.category !== cat) return false;
+    if (pay && payGroupOf(d) !== pay) return false;
     if (txt) {
       const f = parseFeature(d.feature);
       const s = (f.model+f.maker+f.frame+d.name+'').toLowerCase();
@@ -1101,7 +1118,7 @@ function renderList() {
     const soldFlag = isIn && allData.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(entryId));
     return `<div class="entry ${isIn?'in':'out'}" onclick="showDetail('${d.uid}')">
       <div class="e-top">
-        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}${(isIn && purchasePayMethodOf(d)==='未収入金')?'<span class="sold-tag">メルカリ残高</span>':''}</span>
+        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}${(isIn && purchasePayMethodOf(d)==='未収入金')?'<span class="sold-tag">メルカリ残高</span>':''}${(isIn && purchasePayMethodOf(d)==='普通預金')?'<span class="sold-tag">口座払い</span>':''}${(!isIn && receiveMethodOf(d)==='現金')?'<span class="sold-tag">現金受取</span>':''}</span>
         <span class="e-date">${d.date||''}</span>
       </div>
       <div class="e-cat">${d.category||''}</div>
