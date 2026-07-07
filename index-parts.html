@@ -184,8 +184,8 @@
       <div class="field">
         <label>支払方法 *</label>
         <select id="in-paymethod" onchange="toggleInCustomFields()">
-          <option value="普通預金">普通預金（銀行振込・引落）</option>
           <option value="現金">現金</option>
+          <option value="普通預金">普通預金（銀行振込・引落）</option>
           <option value="未収入金">メルカリ残高で購入（銀行を経由しない）</option>
           <option value="__custom">その他（自由入力）</option>
         </select>
@@ -284,6 +284,14 @@
       </div>
     </div>
 
+    <div class="field">
+      <label>入金方法 *</label>
+      <select id="out-receiveMethod">
+        <option value="口座">口座入金（未収入金→統合出金消込ツールで消込）</option>
+        <option value="現金">現金（その場で受け取り・銀行を経由しない）</option>
+      </select>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px">メルカリ・ジモティあんしん決済は「口座」、直接取引・現金での手渡しは「現金」を選んでください（ヤフオクはケースにより異なるため都度選択）</div>
+    </div>
     <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="out-name" value="メルカリ購入者様"></div>
     <div class="field"><label>住所</label><input type="text" id="out-address"></div>
     <div class="field"><label>職業</label><input type="text" id="out-job"></div>
@@ -574,7 +582,18 @@ function setMemoTag(memo, tag, value){
   }
   return m;
 }
-function purchasePayMethodOf(d){ return parseMemoTag(d.memo, '支払方法') || '普通預金'; }
+function purchasePayMethodOf(d){ return parseMemoTag(d.memo, '支払方法') || '現金'; }
+// 入金方法：明示タグがあればそれを優先。タグがない過去データは、相手方氏名から推測する
+// （メルカリ・ジモティを選ぶと氏名欄に自動でその名前が入る仕組みのため、
+//  それ以外の氏名＝直接取引の本名とみなし、現金と推測する。ヤフオクは現金・口座どちらもあり得るため
+//  推測できず、これまで通り口座扱いのままとする＝過去分は必要に応じて個別に選び直してください）。
+function receiveMethodOf(d){
+  const tagged = parseMemoTag(d.memo, '入金方法');
+  if (tagged) return tagged;
+  const nm = (d.name || '').trim();
+  if (nm && nm !== 'メルカリ' && nm !== 'ヤフオク' && nm !== 'ジモティ' && nm !== 'メルカリ購入者様') return '現金';
+  return '口座';
+}
 function purchaseAccountOf(d){ return parseMemoTag(d.memo, '仕入区分') || '仕入高'; }
 function purchaseCleanMemo(memo){
   let m = setMemoTag(memo, '支払方法', null);
@@ -700,6 +719,7 @@ function submitOut() {
   const serviceFee = 0;
   const platformFee = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
   const shipping = parseInt((document.getElementById('out-shipping')?.value||'').replace(/,/g,'')) || 0;
+  const receiveMethod = v('out-receiveMethod') || '口座';
   const serviceMemo = '';
 
   // memoに付帯情報を埋め込み（後で正規表現で抽出できる形式）
@@ -712,6 +732,7 @@ function submitOut() {
   if (serviceFee) metaTags.push('[作業費:' + serviceFee + ']');
   if (platformFee) metaTags.push('[手数料:' + platformFee + ']');
   if (shipping) metaTags.push('[送料:' + shipping + ']');
+  if (receiveMethod) metaTags.push('[入金方法:' + receiveMethod + ']');
   const fullMemo = [metaTags.join(''), v('out-memo'), serviceMemo].filter(Boolean).join(' ');
 
   const rec = {
@@ -1166,7 +1187,7 @@ function editEntry() {
     document.getElementById('in-address').value = d.address || '';
     document.getElementById('in-job').value = d.job || '';
     document.getElementById('in-memo').value = purchaseCleanMemo(d.memo);
-    setSelectOrCustom('in-paymethod', 'in-paymethod-custom-field', 'in-paymethod-custom', purchasePayMethodOf(d), ['普通預金','現金','未収入金']);
+    setSelectOrCustom('in-paymethod', 'in-paymethod-custom-field', 'in-paymethod-custom', purchasePayMethodOf(d), ['現金','普通預金','未収入金']);
     setSelectOrCustom('in-account', 'in-account-custom-field', 'in-account-custom', purchaseAccountOf(d), ['仕入高','消耗品費','工具器具備品']);
     toggleInCustomFields();
     document.querySelector('#t-in .btn-primary').textContent = '更新を保存（編集中：受入-' + d.id + '）';
@@ -1200,6 +1221,8 @@ function editEntry() {
     showPlatformFee();
     document.getElementById('out-shipping').value = d.shipping || '';
     showShippingFee();
+    const rmEl = document.getElementById('out-receiveMethod');
+    if (rmEl) rmEl.value = receiveMethodOf(d);
     document.getElementById('out-age2').value = d.age || '';
     document.getElementById('out-idMethod').value = d.idMethod || '';
     document.getElementById('out-idNo').value = d.idNo || '';
@@ -1210,7 +1233,7 @@ function editEntry() {
     // ※個別の作業項目（品目名ごとの内訳）はタグ化されておらず備考に文字として混在しているため、
     //   service-rowsへの個別復元はできない（このアプリのデータ構造上、確認できません）。
     let memo = d.memo || '';
-    memo = memo.replace(/\[対応受入:[^\]]+\]/, '').replace(/\[合計金額:[^\]]+\]/, '').replace(/\[作業費:[^\]]+\]/, '').replace(/\[手数料:[^\]]+\]/, '').replace(/\[送料:[^\]]+\]/, '').trim();
+    memo = memo.replace(/\[対応受入:[^\]]+\]/, '').replace(/\[合計金額:[^\]]+\]/, '').replace(/\[作業費:[^\]]+\]/, '').replace(/\[手数料:[^\]]+\]/, '').replace(/\[送料:[^\]]+\]/, '').replace(/\[入金方法:[^\]]+\]/, '').trim();
     document.getElementById('out-memo').value = memo;
     document.querySelector('#t-out .btn-primary').textContent = '更新を保存（編集中：払出-' + d.id + '）';
   }
@@ -1339,7 +1362,7 @@ function clearIn() {
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('in-qty').value='1';
   document.getElementById('in-date').value = todayISO();
-  document.getElementById('in-paymethod').value = '普通預金';
+  document.getElementById('in-paymethod').value = '現金';
   document.getElementById('in-account').value = '仕入高';
   toggleInCustomFields();
   showInPrice();
@@ -1353,6 +1376,8 @@ function clearOut() {
   document.getElementById('out-qty').value='1';
   document.getElementById('out-date').value = todayISO();
   document.getElementById('out-name').value = 'メルカリ購入者様'; // 相手方氏名のデフォルト（必要に応じて修正可）
+  const rmEl = document.getElementById('out-receiveMethod');
+  if (rmEl) rmEl.value = '口座';
   const feeEl = document.getElementById('out-platformfee');
   if (feeEl) feeEl.value = '';
   showPlatformFee();
@@ -1944,6 +1969,7 @@ function previewSalesJournal() {
     const sales = salesAmount(d);
     const fee = parseInt(d.platformFee) || 0;
     const ship = parseInt(d.shipping) || 0;
+    const method = receiveMethodOf(d);
     sumSales += sales; sumFee += fee; sumShip += ship;
     return `<tr>
       <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${d.date}</td>
@@ -1951,6 +1977,7 @@ function previewSalesJournal() {
       <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${sales.toLocaleString()}</td>
       <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${fee.toLocaleString()}</td>
       <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${ship.toLocaleString()}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid var(--border)">${method === '現金' ? '現金' : '未収入金'}</td>
       <td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">¥${(sales - fee - ship).toLocaleString()}</td>
     </tr>`;
   }).join('');
@@ -1963,7 +1990,8 @@ function previewSalesJournal() {
         <th style="padding:4px 8px;text-align:right">売上</th>
         <th style="padding:4px 8px;text-align:right">販売手数料</th>
         <th style="padding:4px 8px;text-align:right">送料</th>
-        <th style="padding:4px 8px;text-align:right">未収入金</th>
+        <th style="padding:4px 8px">借方勘定科目</th>
+        <th style="padding:4px 8px;text-align:right">差引入金額</th>
       </tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr style="font-weight:700;border-top:2px solid var(--border)">
@@ -1971,6 +1999,7 @@ function previewSalesJournal() {
         <td style="padding:4px 8px;text-align:right">¥${sumSales.toLocaleString()}</td>
         <td style="padding:4px 8px;text-align:right">¥${sumFee.toLocaleString()}</td>
         <td style="padding:4px 8px;text-align:right">¥${sumShip.toLocaleString()}</td>
+        <td style="padding:4px 8px"></td>
         <td style="padding:4px 8px;text-align:right">¥${(sumSales - sumFee - sumShip).toLocaleString()}</td>
       </tr></tfoot>
     </table>
@@ -1996,12 +2025,13 @@ function exportSalesJournalCSV() {
     const item = (d.feature || '').replace(/\n/g, ' ');
     const dateSlash = fmtDateSlashFull(d.date);
     const no = String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号は半角数字のみ
-    rows.push(['[明細行]', dateSlash, no, '未収入金', '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]);
+    const account = receiveMethodOf(d) === '現金' ? '現金' : '未収入金';
+    rows.push(['[明細行]', dateSlash, no, account, '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]);
     if (fee > 0) {
-      rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '未収入金', '', fee, d.name || '', 'プラットフォーム手数料：' + item]);
+      rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, account, '', fee, d.name || '', 'プラットフォーム手数料：' + item]);
     }
     if (ship > 0) {
-      rows.push(['[明細行]', dateSlash, no, '荷造運賃', '課対仕入10%', ship, '未収入金', '', ship, d.name || '', '送料・梱包費：' + item]);
+      rows.push(['[明細行]', dateSlash, no, '荷造運賃', '課対仕入10%', ship, account, '', ship, d.name || '', '送料・梱包費：' + item]);
     }
     denpyoSeq++;
   });
