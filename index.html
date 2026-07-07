@@ -169,8 +169,8 @@
       <div class="field">
         <label>支払方法 *</label>
         <select id="in-paymethod" onchange="toggleInCustomFields()">
-          <option value="普通預金">普通預金（銀行振込・引落）</option>
           <option value="現金">現金</option>
+          <option value="普通預金">普通預金（銀行振込・引落）</option>
           <option value="未収入金">メルカリ残高で購入（銀行を経由しない）</option>
           <option value="__custom">その他（自由入力）</option>
         </select>
@@ -563,7 +563,7 @@ function setMemoTag(memo, tag, value){
   }
   return m;
 }
-function purchasePayMethodOf(d){ return parseMemoTag(d.memo, '支払方法') || '普通預金'; }
+function purchasePayMethodOf(d){ return parseMemoTag(d.memo, '支払方法') || '現金'; }
 function purchaseAccountOf(d){ return parseMemoTag(d.memo, '仕入区分') || '仕入高'; }
 function purchaseCleanMemo(memo){
   let m = setMemoTag(memo, '支払方法', null);
@@ -1159,7 +1159,7 @@ function editEntry() {
     document.getElementById('in-address').value = d.address || '';
     document.getElementById('in-job').value = d.job || '';
     document.getElementById('in-memo').value = purchaseCleanMemo(d.memo);
-    setSelectOrCustom('in-paymethod', 'in-paymethod-custom-field', 'in-paymethod-custom', purchasePayMethodOf(d), ['普通預金','現金','未収入金']);
+    setSelectOrCustom('in-paymethod', 'in-paymethod-custom-field', 'in-paymethod-custom', purchasePayMethodOf(d), ['現金','普通預金','未収入金']);
     setSelectOrCustom('in-account', 'in-account-custom-field', 'in-account-custom', purchaseAccountOf(d), ['仕入高','消耗品費','工具器具備品']);
     toggleInCustomFields();
     document.querySelector('#t-in .btn-primary').textContent = '更新を保存（編集中：受入-' + d.id + '）';
@@ -1355,7 +1355,7 @@ function clearIn() {
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('in-qty').value='1';
   document.getElementById('in-date').value = todayISO();
-  document.getElementById('in-paymethod').value = '普通預金';
+  document.getElementById('in-paymethod').value = '現金';
   document.getElementById('in-account').value = '仕入高';
   toggleInCustomFields();
   showInPrice();
