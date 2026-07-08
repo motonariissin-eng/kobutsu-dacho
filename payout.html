@@ -308,6 +308,7 @@ function salesAmountOf(rec){
   return parseInt(rec.price) || 0;
 }
 function platformFeeOf(rec){ return parseInt(parseMemoTag(rec.memo, '手数料')) || 0; }
+function shippingOf(rec){ return parseInt(parseMemoTag(rec.memo, '送料')) || 0; } // 小物台帳のみ使用（バイク台帳は該当タグなし＝常に0）
 // 入金方法：明示タグがあればそれを優先。タグがない過去データは、相手方氏名から推測する
 // （メルカリ・ジモティを選ぶと氏名欄に自動でその名前が入る仕組みのため、
 //  それ以外の氏名＝直接取引の本名とみなし、現金と推測する。ヤフオクは現金・口座どちらもあり得るため
@@ -333,7 +334,7 @@ function bankAccountOf(rec){
   if (nm.includes('ヤフオク') || nm.includes('ジモティ')) return 'ゆうちょ銀行';
   return '埼玉縣信用金庫';
 }
-function totalReceivableOf(rec){ return salesAmountOf(rec) - platformFeeOf(rec); }
+function totalReceivableOf(rec){ return salesAmountOf(rec) - platformFeeOf(rec) - shippingOf(rec); }
 function remainingOf(rec){
   if (payoutDoneOf(rec)) return 0;
   const bal = parseMemoTag(rec.memo, '残高');
@@ -410,10 +411,10 @@ let paidList = [];
 function getUnifiedPaidList(){
   const list = [];
   bikeEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && payoutDoneOf(d) && receiveMethodOf(d) !== '現金').forEach(d => {
-    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), method: parseMemoTag(d.memo,'出金方法') || '銀行', account: parseMemoTag(d.memo,'消込先'), raw:d });
+    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: totalReceivableOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), method: parseMemoTag(d.memo,'出金方法') || '銀行', account: parseMemoTag(d.memo,'消込先'), raw:d });
   });
   partsEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && payoutDoneOf(d) && receiveMethodOf(d) !== '現金').forEach(d => {
-    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: salesAmountOf(d) - platformFeeOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), method: parseMemoTag(d.memo,'出金方法') || '銀行', account: parseMemoTag(d.memo,'消込先'), raw:d });
+    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: totalReceivableOf(d), payoutDate: parseMemoTag(d.memo,'出金日'), method: parseMemoTag(d.memo,'出金方法') || '銀行', account: parseMemoTag(d.memo,'消込先'), raw:d });
   });
   loadDocs().filter(d => d.payoutDone).forEach(d => {
     list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: (parseInt(d.price)||0) - (parseInt(d.fee)||0) - (parseInt(d.shipping)||0), payoutDate: d.payoutDate||'', method: d.payoutMethod || '銀行', account: d.payoutAccount || '', raw:d });
