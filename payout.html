@@ -85,10 +85,18 @@
   <div class="card">
     <h2>2. 今回の振込情報を入力</h2>
     <div class="row2">
+      <div class="field"><label>入金先口座 *</label>
+        <select id="pd-account">
+          <option value="埼玉縣信用金庫">埼玉縣信用金庫（メルカリ）</option>
+          <option value="ゆうちょ銀行">ゆうちょ銀行（ヤフオク・ジモティ）</option>
+        </select>
+      </div>
       <div class="field"><label>出金日（振込があった日） *</label><input type="date" id="pd-date"></div>
-      <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="pd-fee" placeholder="0" oninput="updatePayoutDiff()"></div>
     </div>
-    <div class="field"><label>銀行入金額（円） *</label><input type="text" inputmode="numeric" id="pd-bank" placeholder="0" oninput="updatePayoutDiff()"></div>
+    <div class="row2">
+      <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="pd-fee" placeholder="0" oninput="updatePayoutDiff()"></div>
+      <div class="field"><label>銀行入金額（円） *</label><input type="text" inputmode="numeric" id="pd-bank" placeholder="0" oninput="updatePayoutDiff()"></div>
+    </div>
     <div id="payout-diff-check" style="font-size:12px;margin-bottom:8px"></div>
     <div class="btn-group">
       <button class="btn btn-primary" onclick="exportPayoutJournalCSV()">CSVを出力して出金済にする</button>
@@ -318,6 +326,13 @@ function receiveMethodOf(rec){
   return '口座';
 }
 function payoutDoneOf(rec){ return parseMemoTag(rec.memo, '出金済') === '1'; }
+// どの銀行口座に着金するかをプラットフォームから判定する。
+// メルカリ→埼玉縣信用金庫、ヤフオク・ジモティ（あんしん決済）→ゆうちょ銀行。
+function bankAccountOf(rec){
+  const nm = (rec.name || rec.item || '').trim();
+  if (nm.includes('ヤフオク') || nm.includes('ジモティ')) return 'ゆうちょ銀行';
+  return '埼玉縣信用金庫';
+}
 function totalReceivableOf(rec){ return salesAmountOf(rec) - platformFeeOf(rec); }
 function remainingOf(rec){
   if (payoutDoneOf(rec)) return 0;
@@ -378,13 +393,13 @@ function refreshPending(){
 function getUnifiedPendingList(){
   const list = [];
   bikeEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && remainingOf(d) > 0 && receiveMethodOf(d) !== '現金').forEach(d => {
-    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: remainingOf(d), raw:d });
+    list.push({ key:'bike|'+d.uid, source:'bike', label:'バイク', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: remainingOf(d), account: bankAccountOf(d), raw:d });
   });
   partsEntries.filter(d => isOutKubun(d.kubun) && salesAmountOf(d) > 0 && remainingOf(d) > 0 && receiveMethodOf(d) !== '現金').forEach(d => {
-    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: remainingOf(d), raw:d });
+    list.push({ key:'parts|'+d.uid, source:'parts', label:'小物', date:d.date, item:(d.feature||'').replace(/\n/g,' '), name:d.name||'', receivable: remainingOf(d), account: bankAccountOf(d), raw:d });
   });
   loadDocs().filter(d => remainingOfDoc(d) > 0).forEach(d => {
-    list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: remainingOfDoc(d), raw:d });
+    list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: remainingOfDoc(d), account: bankAccountOf(d), raw:d });
   });
   return list.sort((a,b)=> a.date < b.date ? -1 : 1);
 }
@@ -475,14 +490,24 @@ function renderPendingList(){
   puAmountDirty = false;
   const wrap = document.getElementById('payout-pending-list');
   if (!pendingList.length){ wrap.innerHTML = '<p class="empty">未出金の記録はありません</p>'; return; }
+  const filterVal = document.getElementById('pending-account-filter')?.value || '';
+  const filtered = filterVal ? pendingList.filter(p => p.account === filterVal) : pendingList;
   wrap.innerHTML = `
+    <div class="field" style="max-width:260px">
+      <label>入金先口座で絞り込み</label>
+      <select id="pending-account-filter" onchange="renderPendingList()">
+        <option value="">すべて</option>
+        <option value="埼玉縣信用金庫">埼玉縣信用金庫（メルカリ）</option>
+        <option value="ゆうちょ銀行">ゆうちょ銀行（ヤフオク・ジモティ）</option>
+      </select>
+    </div>
     <table>
       <thead><tr>
         <th><input type="checkbox" checked onchange="togglePayoutSelectAll(this)"></th>
-        <th>区分</th><th>日付</th><th>品名</th><th class="num">残り未収入金</th>
+        <th>区分</th><th>日付</th><th>品名</th><th>入金先口座</th><th class="num">残り未収入金</th>
       </tr></thead>
       <tbody>
-        ${pendingList.map(p => {
+        ${filtered.map(p => {
           const total = p.source === 'docs' ? totalReceivableOfDoc(p.raw) : totalReceivableOf(p.raw);
           const partialNote = total > p.receivable ? '<div style="font-size:11px;color:var(--text2)">元¥' + total.toLocaleString() + '（一部すでに消込済）</div>' : '';
           return `
@@ -491,11 +516,14 @@ function renderPendingList(){
             <td><span class="src-tag src-${p.source}">${p.label}</span></td>
             <td>${p.date}</td>
             <td>${p.item}</td>
+            <td>${p.account}</td>
             <td class="num">¥${p.receivable.toLocaleString()}${partialNote}</td>
           </tr>`;
         }).join('')}
       </tbody>
     </table>`;
+  // 絞り込みセレクトの選択状態を保持
+  if (filterVal) document.getElementById('pending-account-filter').value = filterVal;
   updateSelectionSummary();
 }
 
@@ -534,21 +562,30 @@ function exportPayoutJournalCSV(){
   const payoutDate = v('pd-date');
   const bank = num('pd-bank');
   const fee = num('pd-fee');
+  const account = v('pd-account');
   if (!payoutDate || !bank){ msgBox('payout-msg', '出金日・銀行入金額を入力してください', 'err'); return; }
 
   const selectedKeys = new Set(checks.map(el => el.value));
   const selectedItems = pendingList.filter(p => selectedKeys.has(p.key));
   const receivableTotal = selectedItems.reduce((s,p)=>s+p.receivable, 0);
 
+  // 選んだ口座と、実際にその案件が入金されるはずの口座が食い違っていないか確認
+  // （例：メルカリ＝埼玉縣信用金庫のはずの案件が、ゆうちょ銀行の振込に混ざって選ばれている等）
+  const mismatched = selectedItems.filter(p => p.account !== account);
+  if (mismatched.length){
+    const list = mismatched.map(p => '・' + p.item + '（本来：' + p.account + '）').join('\n');
+    if (!confirm('選んだ口座「' + account + '」と、案件の入金先が一致しないものが' + mismatched.length + '件あります。\n' + list + '\n\nこのまま続けますか？')) return;
+  }
+
   if (receivableTotal !== bank + fee){
     if (!confirm('未収入金合計と（銀行入金額＋振込手数料）が一致していません。\n未収入金合計：¥' + receivableTotal.toLocaleString() + '\n銀行入金額＋手数料：¥' + (bank+fee).toLocaleString() + '\n\nこのまま続けますか？')) return;
   }
 
-  const no = payoutDate.replace(/-/g,'');
+  const no = 'PO' + payoutDate.replace(/-/g,''); // 伝票番号：出金消込と分かるよう接頭辞を付けて重複を防ぐ
   const dateSlash = fmtDateSlash(payoutDate);
   const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','摘要'];
   const rows = [
-    ['[明細行]', dateSlash, no, '普通預金', '', bank, '', '', '', 'メルカリ売上の振込入金（バイク・小物・書類 統合消込）'],
+    ['[明細行]', dateSlash, no, account, '', bank, '', '', '', 'メルカリ・ヤフオク・ジモティ売上の振込入金（バイク・小物・書類 統合消込）'],
   ];
   if (fee > 0) rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '', '', '', '振込手数料']);
   rows.push(['[明細行]', dateSlash, no, '', '', '', '未収入金', '', receivableTotal, '未収入金の取り崩し']);
@@ -639,7 +676,7 @@ function exportInternalUseJournalCSV(){
   const fullNote = consumption.some(c => c.newBalance > 0) ? '\n（一部の案件は残額が残るため「未出金」に残ります）' : '';
   if (!confirm('銀行を経由せず、下記の仕訳をfreee用CSVとして出力します。よろしいですか？\n\n借方：' + account + ' ¥' + amount.toLocaleString() + '\n貸方：未収入金 ¥' + amount.toLocaleString() + '\n対象：' + usedCount + '件' + fullNote)) return;
 
-  const no = useDate.replace(/-/g,'');
+  const no = 'PU' + useDate.replace(/-/g,''); // 伝票番号：メルカリ内消込と分かるよう接頭辞を付けて重複を防ぐ
   const dateSlash = fmtDateSlash(useDate);
   const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','摘要'];
   const rows = [
