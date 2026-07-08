@@ -599,7 +599,11 @@ function receiveMethodOf(d){
   const nm = (d.name || '').trim();
   // 完全一致ではなく「含むか」で判定する。氏名欄に「メルカリ　〇〇様」のように
   // プラットフォーム名＋敬称・実名を付け足しているケースでも正しく判定できるようにするため。
-  if (nm && !nm.includes('メルカリ') && !nm.includes('ヤフオク') && !nm.includes('ジモティ')) return '現金';
+  if (nm.includes('ジモティ')) {
+    // ジモティは手数料の記録があれば「あんしん決済＝口座」、なければ「手渡し＝現金」と推測
+    return (parseInt(d.platformFee) || 0) > 0 ? '口座' : '現金';
+  }
+  if (nm && !nm.includes('メルカリ') && !nm.includes('ヤフオク')) return '現金';
   return '口座';
 }
 function purchaseAccountOf(d){ return parseMemoTag(d.memo, '仕入区分') || '仕入高'; }
