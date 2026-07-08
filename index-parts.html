@@ -2030,7 +2030,8 @@ function exportSalesJournalCSV() {
   // freee「仕訳インポート（他社会計ソフトインポート＝振替伝票）」用の列形式。
   // ・1列目は freee の必須マーカー列：ヘッダ行は[表題行]、データ行は[明細行]を入れないと
   //   freee側が仕訳データとして認識せず「このファイル形式はインポートできません」となる。
-  // ・伝票番号が同じ行は1つの仕訳としてまとめてインポートされる（半角数字20桁以内で指定）。
+  // ・伝票番号が同じ行は1つの仕訳としてまとめてインポートされる（半角英数字20桁以内で指定。
+  //   バイク・小物・仕入・売上を区別する接頭辞（BS/BI/PS/PI等）を付けて、日付+番号の重複を防いでいる）。
   // ・日付はYYYY/MM/DD形式が必須（YYYY-MM-DDのハイフン区切りは不可）。
   const header = ['[表題行]', '日付', '伝票No.', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '取引先', '摘要'];
   const rows = [];
@@ -2041,7 +2042,7 @@ function exportSalesJournalCSV() {
     const ship = parseInt(d.shipping) || 0;
     const item = (d.feature || '').replace(/\n/g, ' ');
     const dateSlash = fmtDateSlashFull(d.date);
-    const no = String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号は半角数字のみ
+    const no = 'PS' + String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号：小物・売上と分かるよう接頭辞を付けて重複を防ぐ
     const account = receiveMethodOf(d) === '現金' ? '現金' : '未収入金';
     rows.push(['[明細行]', dateSlash, no, account, '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]);
     if (fee > 0) {
@@ -2129,7 +2130,7 @@ function exportPurchaseJournalCSV() {
     const f = parseFeature(d.feature);
     const item = [f.maker, f.model].filter(Boolean).join(' ') || d.category || '';
     const dateSlash = fmtDateSlashFull(d.date);
-    const no = String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号は半角数字のみ
+    const no = 'PI' + String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号：小物・仕入と分かるよう接頭辞を付けて重複を防ぐ
     const account = purchaseAccountOf(d);
     const payMethod = purchasePayMethodOf(d);
     rows.push(['[明細行]', dateSlash, no, account, '課対仕入10%', price, payMethod, '', price, d.name || '', '仕入：' + item]);
