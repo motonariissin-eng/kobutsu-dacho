@@ -589,7 +589,11 @@ function receiveMethodOf(d){
   const nm = (d.name || '').trim();
   // 完全一致ではなく「含むか」で判定する。氏名欄に「メルカリ　〇〇様」のように
   // プラットフォーム名＋敬称・実名を付け足しているケースでも正しく判定できるようにするため。
-  if (nm && !nm.includes('メルカリ') && !nm.includes('ヤフオク') && !nm.includes('ジモティ')) return '現金';
+  if (nm.includes('ジモティ')) {
+    // ジモティは手数料の記録があれば「あんしん決済＝口座」、なければ「手渡し＝現金」と推測
+    return (parseInt(d.platformFee) || 0) > 0 ? '口座' : '現金';
+  }
+  if (nm && !nm.includes('メルカリ') && !nm.includes('ヤフオク')) return '現金';
   return '口座';
 }
 function purchaseAccountOf(d){ return parseMemoTag(d.memo, '仕入区分') || '仕入高'; }
@@ -1342,19 +1346,24 @@ function fillChannel() {
   nameEl.value = (val === '直接取引') ? '' : val;
   nameEl.focus();
 
-  // 入金方法の自動セット：メルカリ・ジモティ（あんしん決済）は必ず口座を経由する。
-  // 直接取引は必ず現金。ヤフオクは現金・口座どちらもあり得るため、注意書きを出すだけで自動セットはしない。
+  // 入金方法の自動セット：メルカリは必ず口座を経由する。直接取引は必ず現金。
+  // ジモティは基本「現金」（手渡し）がデフォルト。あんしん決済で手数料が発生する場合のみ「口座」に切り替える
+  // （手数料の入力欄と連動：showPlatformFeeで手数料が入るとジモティなら自動で口座に切り替わる）。
+  // ヤフオクは現金・口座どちらもあり得るため、自動セットせず都度選んでもらう。
   const rmEl = document.getElementById('out-receiveMethod');
   const noteEl = document.getElementById('out-receiveMethod-note');
   if (rmEl) {
-    if (val === 'メルカリ' || val === 'ジモティ') {
+    if (val === 'メルカリ') {
       rmEl.value = '口座';
       if (noteEl) noteEl.textContent = '';
     } else if (val === '直接取引') {
       rmEl.value = '現金';
       if (noteEl) noteEl.textContent = '';
     } else if (val === 'ヤフオク') {
-      if (noteEl) noteEl.textContent = 'ヤフオクは現金・口座（あんしん決済／相手からの直接振込）の両方があるため、実際の受け取り方法を選び直してください';
+      if (noteEl) noteEl.textContent = 'ヤフオクは基本的に口座（落札者からの振込）ですが、現金のこともあるため実際の受け取り方法を選び直してください。手数料は一律¥1,980です';
+    } else if (val === 'ジモティ') {
+      rmEl.value = '現金';
+      if (noteEl) noteEl.textContent = 'ジモティは現金（手渡し）がデフォルトです。あんしん決済で手数料がかかる場合は、下の「プラットフォーム手数料」に金額を入れると自動で「口座」に切り替わります';
     }
   }
 }
@@ -1489,7 +1498,8 @@ const SERVICE_PRESETS = [
 //   freee側で「支出・手数料」として別計上するための金額として保持するのみ。
 const PLATFORM_FEE_PRESETS = [
   { label: 'メルカリ(10%)', rate: 0.10 },
-  { label: 'ジモティあんしん決済(5%)', rate: 0.05 }
+  { label: 'ジモティあんしん決済(5%)', rate: 0.05 },
+  { label: 'ヤフオク(¥1,980固定)', flat: 1980 }
 ];
 
 function buildPlatformFeeButtons() {
@@ -1503,8 +1513,13 @@ function buildPlatformFeeButtons() {
 function applyPlatformFee(idx) {
   const p = PLATFORM_FEE_PRESETS[idx];
   if (!p) return;
-  const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
-  const fee = Math.round(total * p.rate);
+  let fee;
+  if (p.flat !== undefined) {
+    fee = p.flat; // ヤフオクなど、売却価格に関係なく一律の手数料
+  } else {
+    const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
+    fee = Math.round(total * p.rate);
+  }
   document.getElementById('out-platformfee').value = fee;
   showPlatformFee();
 }
@@ -1513,6 +1528,13 @@ function showPlatformFee() {
   const val = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
   const el = document.getElementById('disp-platformfee');
   if (el) el.textContent = '¥ ' + val.toLocaleString();
+
+  // ジモティは手数料の有無で入金方法を自動切り替え：手数料あり＝あんしん決済（口座）、なし＝手渡し（現金）
+  const channelEl = document.getElementById('out-channel');
+  const rmEl = document.getElementById('out-receiveMethod');
+  if (channelEl && rmEl && channelEl.value === 'ジモティ') {
+    rmEl.value = val > 0 ? '口座' : '現金';
+  }
 }
 
 function buildServiceQuickButtons() {
