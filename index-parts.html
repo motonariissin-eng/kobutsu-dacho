@@ -597,7 +597,9 @@ function receiveMethodOf(d){
   const tagged = parseMemoTag(d.memo, '入金方法');
   if (tagged) return tagged;
   const nm = (d.name || '').trim();
-  if (nm && nm !== 'メルカリ' && nm !== 'ヤフオク' && nm !== 'ジモティ' && nm !== 'メルカリ購入者様') return '現金';
+  // 完全一致ではなく「含むか」で判定する。氏名欄に「メルカリ　〇〇様」のように
+  // プラットフォーム名＋敬称・実名を付け足しているケースでも正しく判定できるようにするため。
+  if (nm && !nm.includes('メルカリ') && !nm.includes('ヤフオク') && !nm.includes('ジモティ')) return '現金';
   return '口座';
 }
 function purchaseAccountOf(d){ return parseMemoTag(d.memo, '仕入区分') || '仕入高'; }
