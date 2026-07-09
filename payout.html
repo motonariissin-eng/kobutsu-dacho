@@ -83,30 +83,8 @@
   </div>
 
   <div class="card">
-    <h2>2. 今回の振込情報を入力</h2>
-    <div class="row2">
-      <div class="field"><label>入金先口座 *</label>
-        <select id="pd-account">
-          <option value="埼玉縣信用金庫">埼玉縣信用金庫（メルカリ）</option>
-          <option value="ゆうちょ銀行">ゆうちょ銀行（ヤフオク・ジモティ）</option>
-        </select>
-      </div>
-      <div class="field"><label>出金日（振込があった日） *</label><input type="date" id="pd-date"></div>
-    </div>
-    <div class="row2">
-      <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="pd-fee" placeholder="0" oninput="updatePayoutDiff()"></div>
-      <div class="field"><label>銀行入金額（円） *</label><input type="text" inputmode="numeric" id="pd-bank" placeholder="0" oninput="updatePayoutDiff()"></div>
-    </div>
-    <div id="payout-diff-check" style="font-size:12px;margin-bottom:8px"></div>
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="exportPayoutJournalCSV()">CSVを出力して出金済にする</button>
-    </div>
-    <div id="payout-msg"></div>
-  </div>
-
-  <div class="card">
-    <h2>3. メルカリ内でそのまま仕入・費用に使った場合の消込（銀行を経由しない）</h2>
-    <p class="desc">下で、銀行に払出す前にメルカリ内の残高で部品などを購入した案件を<strong>1件だけ</strong>選んでください（「1. 未出金の一覧」のチェックとは連動しません）。お金は銀行を経由していないので「普通預金」ではなく、仕入・費用の勘定科目に対して未収入金を直接取り崩す仕訳を作ります。複数件ある場合は、1件ずつこのフォームで繰り返し処理してください。</p>
+    <h2>2. メルカリ内でそのまま仕入・費用に使った場合の消込（銀行を経由しない）</h2>
+    <p class="desc"><strong>メルカリ内で使った分がなければ、ここは使いません。</strong>下で、銀行に払出す前にメルカリ内の残高で部品などを購入した案件を<strong>1件だけ</strong>選んでください（「1. 未出金の一覧」のチェックとは連動しません）。お金は銀行を経由していないので「普通預金」ではなく、仕入・費用の勘定科目に対して未収入金を直接取り崩す仕訳を作ります。複数件ある場合は、1件ずつこのフォームで繰り返し処理してください。</p>
     <div class="field">
       <label>対象の案件 *</label>
       <select id="pu-target" onchange="updatePuTargetInfo()">
@@ -148,6 +126,28 @@
       <button class="btn btn-primary" onclick="exportInternalUseJournalCSV()">CSVを出力して消込にする（銀行未経由）</button>
     </div>
     <div id="pu-msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. 今回の振込情報を入力</h2>
+    <div class="row2">
+      <div class="field"><label>入金先口座 *</label>
+        <select id="pd-account">
+          <option value="埼玉縣信用金庫">埼玉縣信用金庫（メルカリ）</option>
+          <option value="ゆうちょ銀行">ゆうちょ銀行（ヤフオク・ジモティ）</option>
+        </select>
+      </div>
+      <div class="field"><label>出金日（振込があった日） *</label><input type="date" id="pd-date"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="pd-fee" placeholder="0" oninput="updatePayoutDiff()"></div>
+      <div class="field"><label>銀行入金額（円） *</label><input type="text" inputmode="numeric" id="pd-bank" placeholder="0" oninput="updatePayoutDiff()"></div>
+    </div>
+    <div id="payout-diff-check" style="font-size:12px;margin-bottom:8px"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="exportPayoutJournalCSV()">CSVを出力して出金済にする</button>
+    </div>
+    <div id="payout-msg"></div>
   </div>
 
   <div class="card">
