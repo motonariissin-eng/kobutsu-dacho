@@ -43,6 +43,7 @@
   .src-bike { background:#1a5a9a; }
   .src-parts { background:#7a4a1a; }
   .src-docs { background:#2a7a3a; }
+  .src-internal { background:#7a1a1a; }
   .empty { font-size:12px; color:var(--text2); padding:10px 0; }
   .msg { font-size:12px; padding:8px 10px; border-radius:5px; margin-top:8px; }
   .msg.ok { background:#123; color:#4c8; }
@@ -84,16 +85,12 @@
 
   <div class="card">
     <h2>2. メルカリ内でそのまま仕入・費用に使った場合の消込（銀行を経由しない）</h2>
-    <p class="desc"><strong>メルカリ内で使った分がなければ、ここは使いません。</strong>下で、銀行に払出す前にメルカリ内の残高で部品などを購入した案件を<strong>1件だけ</strong>選んでください（「1. 未出金の一覧」のチェックとは連動しません）。お金は銀行を経由していないので「普通預金」ではなく、仕入・費用の勘定科目に対して未収入金を直接取り崩す仕訳を作ります。複数件ある場合は、1件ずつこのフォームで繰り返し処理してください。</p>
-    <div class="field">
-      <label>対象の案件 *</label>
-      <select id="pu-target" onchange="updatePuTargetInfo()">
-        <option value="">選択してください...</option>
-      </select>
-    </div>
-    <div id="pu-target-info" style="font-size:12px;margin-bottom:8px;color:var(--text2)"></div>
+    <p class="desc"><strong>メルカリ内で使った分がなければ、ここは使いません。</strong>「何月何日に、いくら分をメルカリ内で使った」という取引をここで登録すると、「1. 未出金の一覧」に<strong>マイナスの取引として追加</strong>されます。お金は銀行を経由していないので「普通預金」ではなく、仕入・費用の勘定科目に対して未収入金を直接取り崩す仕訳を作ります。</p>
     <div class="row2">
       <div class="field"><label>使用日（メルカリ内で購入した日） *</label><input type="date" id="pu-date"></div>
+      <div class="field"><label>金額（円） *</label><input type="text" inputmode="numeric" id="pu-amount" placeholder="例：3000"></div>
+    </div>
+    <div class="row2">
       <div class="field">
         <label>使途の勘定科目 *</label>
         <select id="pu-account" onchange="togglePuCustom()">
@@ -106,9 +103,6 @@
           <option value="__custom">その他（自由入力）</option>
         </select>
       </div>
-    </div>
-    <div class="field" id="pu-custom-field" style="display:none"><label>勘定科目名（自由入力）</label><input type="text" id="pu-account-custom" placeholder="例：車両部品費"></div>
-    <div class="row2">
       <div class="field">
         <label>税区分</label>
         <select id="pu-tax">
@@ -117,13 +111,11 @@
           <option value="対象外">対象外</option>
         </select>
       </div>
-      <div class="field"><label>この案件の残り未収入金（上限）</label><input type="text" id="pu-amount-max" disabled></div>
     </div>
-    <div class="field"><label>実際に使った金額 *</label><input type="text" inputmode="numeric" id="pu-amount" placeholder="例：3000" oninput="markPuAmountDirty()"></div>
+    <div class="field" id="pu-custom-field" style="display:none"><label>勘定科目名（自由入力）</label><input type="text" id="pu-account-custom" placeholder="例：車両部品費"></div>
     <div class="field"><label>摘要・備考</label><input type="text" id="pu-memo" placeholder="例：メルカリ売上金で部品購入（銀行を経由せず）"></div>
-    <div id="pu-preview" style="font-size:12px;margin-bottom:8px"></div>
     <div class="btn-group">
-      <button class="btn btn-primary" onclick="exportInternalUseJournalCSV()">CSVを出力して消込にする（銀行未経由）</button>
+      <button class="btn btn-primary" onclick="addInternalUseRecord()">この内容で「1. 未出金の一覧」にマイナス取引として追加</button>
     </div>
     <div id="pu-msg"></div>
   </div>
@@ -261,6 +253,7 @@ const GAS_BIKE = 'https://script.google.com/macros/s/AKfycbyzPq8wPrhrlkNExoz0vpp
 const GAS_PARTS = 'https://script.google.com/macros/s/AKfycbzbR0hubVD_B0bJSyxLUe1bhxYkFBFU_UhzuulJNqB_WjMJ9DHSnMJ1E5l2oCjLwdlu/exec';
 const LS_DOCS = 'doc_sales_records_v1'; // 旧・書類売上記録ツールと同じキー名（同ブラウザなら引き継がれる場合あり）
 const LS_CASH = 'cash_conversions_v1';
+const LS_INTERNAL = 'internal_use_records_v1'; // メルカリ内でそのまま使った（銀行を経由しない）マイナス取引
 
 let bikeEntries = [];
 let partsEntries = [];
@@ -372,6 +365,8 @@ function loadDocs(){ try { return JSON.parse(localStorage.getItem(LS_DOCS) || '[
 function saveDocs(d){ localStorage.setItem(LS_DOCS, JSON.stringify(d)); }
 function loadCash(){ try { return JSON.parse(localStorage.getItem(LS_CASH) || '[]'); } catch(e){ return []; } }
 function saveCash(d){ localStorage.setItem(LS_CASH, JSON.stringify(d)); }
+function loadInternal(){ try { return JSON.parse(localStorage.getItem(LS_INTERNAL) || '[]'); } catch(e){ return []; } }
+function saveInternal(d){ localStorage.setItem(LS_INTERNAL, JSON.stringify(d)); }
 
 // ===== 出金消込：GASから取得 =====
 function fetchGAS(url){
@@ -410,6 +405,9 @@ function getUnifiedPendingList(){
   });
   loadDocs().filter(d => remainingOfDoc(d) > 0).forEach(d => {
     list.push({ key:'docs|'+d.id, source:'docs', label:'書類', date:d.date, item:d.item||'書類', name:d.name||'', receivable: remainingOfDoc(d), account: bankAccountOf(d), raw:d });
+  });
+  loadInternal().forEach(d => {
+    list.push({ key:'internal|'+d.id, source:'internal', label:'内部消化', date:d.date, item:d.memo||d.account, name:'', receivable: -d.amount, account: d.account, raw:d });
   });
   return list.sort((a,b)=> a.date < b.date ? -1 : 1);
 }
@@ -497,8 +495,6 @@ function revertPayout(){
 
 function renderPendingList(){
   pendingList = getUnifiedPendingList();
-  puAmountDirty = false;
-  buildPuTargetOptions();
   const wrap = document.getElementById('payout-pending-list');
   if (!pendingList.length){ wrap.innerHTML = '<p class="empty">未出金の記録はありません</p>'; return; }
   const filterVal = document.getElementById('pending-account-filter')?.value || '';
@@ -515,10 +511,23 @@ function renderPendingList(){
     <table>
       <thead><tr>
         <th><input type="checkbox" checked onchange="togglePayoutSelectAll(this)"></th>
-        <th>区分</th><th>日付</th><th>品名</th><th>入金先口座</th><th class="num">残り未収入金</th>
+        <th>区分</th><th>日付</th><th>品名</th><th>入金先口座／勘定科目</th><th class="num">残り未収入金</th>
+        <th></th>
       </tr></thead>
       <tbody>
         ${filtered.map(p => {
+          if (p.source === 'internal'){
+            return `
+            <tr>
+              <td><input type="checkbox" class="pd-check" value="${p.key}" data-amt="${p.receivable}" checked onchange="updateSelectionSummary()"></td>
+              <td><span class="src-tag src-internal">内部消化</span></td>
+              <td>${p.date}</td>
+              <td>${p.item}</td>
+              <td>${p.account}</td>
+              <td class="num" style="color:#e66">-¥${Math.abs(p.receivable).toLocaleString()}</td>
+              <td><button type="button" class="btn btn-secondary" style="font-size:12px;padding:4px 10px" onclick="deleteInternalUseRecord(${p.raw.id})">削除</button></td>
+            </tr>`;
+          }
           const total = p.source === 'docs' ? totalReceivableOfDoc(p.raw) : totalReceivableOf(p.raw);
           const partialNote = total > p.receivable ? '<div style="font-size:11px;color:var(--text2)">元¥' + total.toLocaleString() + '（一部すでに消込済）</div>' : '';
           return `
@@ -529,6 +538,7 @@ function renderPendingList(){
             <td>${p.item}</td>
             <td>${p.account}</td>
             <td class="num">¥${p.receivable.toLocaleString()}${partialNote}</td>
+            <td></td>
           </tr>`;
         }).join('')}
       </tbody>
@@ -542,8 +552,6 @@ function togglePayoutSelectAll(cb){
   document.querySelectorAll('.pd-check').forEach(el => el.checked = cb.checked);
   updateSelectionSummary();
 }
-let puAmountDirty = false;
-function markPuAmountDirty(){ puAmountDirty = true; updatePuPreview(); }
 function updateSelectionSummary(){
   updatePayoutDiff();
 }
@@ -577,18 +585,20 @@ function exportPayoutJournalCSV(){
 
   const selectedKeys = new Set(checks.map(el => el.value));
   const selectedItems = pendingList.filter(p => selectedKeys.has(p.key));
-  const receivableTotal = selectedItems.reduce((s,p)=>s+p.receivable, 0);
+  const salesItems = selectedItems.filter(p => p.source !== 'internal');
+  const internalItems = selectedItems.filter(p => p.source === 'internal');
+  const receivableTotal = selectedItems.reduce((s,p)=>s+p.receivable, 0); // 内部消化分（マイナス）が自動的に差し引かれた「銀行に入るはずの金額」
 
   // 選んだ口座と、実際にその案件が入金されるはずの口座が食い違っていないか確認
   // （例：メルカリ＝埼玉縣信用金庫のはずの案件が、ゆうちょ銀行の振込に混ざって選ばれている等）
-  const mismatched = selectedItems.filter(p => p.account !== account);
+  const mismatched = salesItems.filter(p => p.account !== account);
   if (mismatched.length){
     const list = mismatched.map(p => '・' + p.item + '（本来：' + p.account + '）').join('\n');
     if (!confirm('選んだ口座「' + account + '」と、案件の入金先が一致しないものが' + mismatched.length + '件あります。\n' + list + '\n\nこのまま続けますか？')) return;
   }
 
   if (receivableTotal !== bank + fee){
-    if (!confirm('未収入金合計と（銀行入金額＋振込手数料）が一致していません。\n未収入金合計：¥' + receivableTotal.toLocaleString() + '\n銀行入金額＋手数料：¥' + (bank+fee).toLocaleString() + '\n\nこのまま続けますか？')) return;
+    if (!confirm('未収入金合計（内部消化のマイナス分を差し引いたもの）と（銀行入金額＋振込手数料）が一致していません。\n未収入金合計：¥' + receivableTotal.toLocaleString() + '\n銀行入金額＋手数料：¥' + (bank+fee).toLocaleString() + '\n\nこのまま続けますか？')) return;
   }
 
   const no = 'PO' + payoutDate.replace(/-/g,''); // 伝票番号：出金消込と分かるよう接頭辞を付けて重複を防ぐ
@@ -599,6 +609,13 @@ function exportPayoutJournalCSV(){
   ];
   if (fee > 0) rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '', '', '', '振込手数料']);
   rows.push(['[明細行]', dateSlash, no, '', '', '', '未収入金', '', receivableTotal, '未収入金の取り崩し']);
+  // 内部消化（銀行を経由せず、メルカリ内でそのまま使った分）を、それぞれ1行ずつ追加
+  internalItems.forEach(p => {
+    const rec = p.raw;
+    const noI = 'PU' + rec.date.replace(/-/g,'');
+    const dateI = fmtDateSlash(rec.date);
+    rows.push(['[明細行]', dateI, noI, rec.account, rec.tax === '対象外' ? '' : rec.tax, rec.amount, '未収入金', '', rec.amount, rec.memo]);
+  });
 
   downloadCSV(header, rows, '統合出金登録_freee用_' + payoutDate.replace(/-/g,'') + '.csv');
 
@@ -606,7 +623,7 @@ function exportPayoutJournalCSV(){
   showLoad(true);
   const writebacks = [];
   const docsAll = loadDocs();
-  selectedItems.forEach(p => {
+  salesItems.forEach(p => {
     if (p.source === 'docs'){
       const rec = docsAll.find(d => String(d.id) === String(p.raw.id));
       if (rec){ rec.payoutDone = true; rec.payoutDate = payoutDate; rec.payoutMethod = '銀行'; rec.payoutAccount = ''; }
@@ -620,6 +637,10 @@ function exportPayoutJournalCSV(){
     }
   });
   saveDocs(docsAll);
+  if (internalItems.length){
+    const internalIds = new Set(internalItems.map(p => p.raw.id));
+    saveInternal(loadInternal().filter(d => !internalIds.has(d.id)));
+  }
 
   Promise.allSettled(writebacks).then(results => {
     showLoad(false);
@@ -645,116 +666,30 @@ function getPuAccountName(){
   if (sel === '__custom') return v('pu-account-custom').trim();
   return sel;
 }
-function buildPuTargetOptions(){
-  const sel = document.getElementById('pu-target');
-  if (!sel) return;
-  const prev = sel.value;
-  sel.innerHTML = '<option value="">選択してください...</option>' + pendingList.map(p =>
-    `<option value="${p.key}">[${p.label}] ${p.date} ${p.item}（残り¥${p.receivable.toLocaleString()}）</option>`
-  ).join('');
-  if (prev && pendingList.some(p => p.key === prev)) sel.value = prev;
-  updatePuTargetInfo();
-}
-function updatePuTargetInfo(){
-  const key = v('pu-target');
-  const item = pendingList.find(p => p.key === key);
-  const infoEl = document.getElementById('pu-target-info');
-  const maxEl = document.getElementById('pu-amount-max');
-  if (!item){
-    if (infoEl) infoEl.textContent = '';
-    if (maxEl) maxEl.value = '';
-    return;
-  }
-  if (infoEl) infoEl.textContent = 'この案件の入金先口座：' + item.account + '（本来の予定先。銀行を経由せず消込む場合はこの口座には影響しません）';
-  if (maxEl) maxEl.value = '¥' + item.receivable.toLocaleString();
-  if (!puAmountDirty) document.getElementById('pu-amount').value = item.receivable || '';
-  updatePuPreview();
-}
-function updatePuPreview(){
-  const key = v('pu-target');
-  const item = pendingList.find(p => p.key === key);
-  const box = document.getElementById('pu-preview');
-  if (!box) return;
-  if (!item){ box.innerHTML = ''; return; }
-  const amount = parseInt(String(v('pu-amount')).replace(/[^0-9]/g,''), 10) || 0;
-  if (!amount){ box.innerHTML = ''; return; }
-  const after = item.receivable - amount;
-  if (after < 0){
-    box.innerHTML = '<span style="color:#e66">この案件の残り未収入金（¥' + item.receivable.toLocaleString() + '）を超えています</span>';
-  } else if (after === 0){
-    box.innerHTML = '<span style="color:var(--accent)">この案件は今回で全額消込まれ、「1. 未出金の一覧」から消えます</span>';
-  } else {
-    box.innerHTML = '<span style="color:var(--text2)">今回¥' + amount.toLocaleString() + 'を消込み、残り¥' + after.toLocaleString() + 'は「1. 未出金の一覧」に残ります</span>';
-  }
-}
-
-function exportInternalUseJournalCSV(){
-  const key = v('pu-target');
-  const item = pendingList.find(p => p.key === key);
-  if (!item){ msgBox('pu-msg', '対象の案件を選択してください', 'err'); return; }
-  const useDate = v('pu-date');
+function addInternalUseRecord(){
+  const date = v('pu-date');
   const account = getPuAccountName();
   const tax = v('pu-tax');
-  const memo = v('pu-memo').trim() || 'メルカリ売上金で購入（銀行を経由せず）';
   const amount = parseInt(String(v('pu-amount')).replace(/[^0-9]/g, ''), 10) || 0;
-  if (!useDate){ msgBox('pu-msg', '使用日を入力してください', 'err'); return; }
+  const memo = v('pu-memo').trim() || 'メルカリ売上金で購入（銀行を経由せず）';
+  if (!date){ msgBox('pu-msg', '使用日を入力してください', 'err'); return; }
   if (!account){ msgBox('pu-msg', '勘定科目を選択（または自由入力）してください', 'err'); return; }
-  if (!amount){ msgBox('pu-msg', '実際に使った金額を入力してください', 'err'); return; }
-  if (amount > item.receivable){ msgBox('pu-msg', '入力した金額（¥' + amount.toLocaleString() + '）が、この案件の残り未収入金（¥' + item.receivable.toLocaleString() + '）を超えています', 'err'); return; }
+  if (!amount){ msgBox('pu-msg', '金額を入力してください', 'err'); return; }
 
-  const newBalance = item.receivable - amount;
-  const fullNote = newBalance > 0 ? '\n（残り¥' + newBalance.toLocaleString() + 'は「1. 未出金の一覧」に残ります）' : '\n（この案件は今回で全額消込まれます）';
-  if (!confirm('銀行を経由せず、下記の仕訳をfreee用CSVとして出力します。よろしいですか？\n\n対象：' + item.item + '（' + item.date + '）\n借方：' + account + ' ¥' + amount.toLocaleString() + '\n貸方：未収入金 ¥' + amount.toLocaleString() + fullNote)) return;
+  const data = loadInternal();
+  const id = data.length ? Math.max(...data.map(d=>d.id)) + 1 : 1;
+  data.push({ id, date, account, tax, amount, memo, exported:false });
+  saveInternal(data);
 
-  const no = 'PU' + useDate.replace(/-/g,''); // 伝票番号：メルカリ内消込と分かるよう接頭辞を付けて重複を防ぐ
-  const dateSlash = fmtDateSlash(useDate);
-  const header = ['[表題行]','日付','伝票No.','借方勘定科目','借方税区分','借方金額','貸方勘定科目','貸方税区分','貸方金額','摘要'];
-  const rows = [
-    ['[明細行]', dateSlash, no, account, tax === '対象外' ? '' : tax, amount, '未収入金', '', amount, memo],
-  ];
-
-  downloadCSV(header, rows, '内部消化登録_freee用_' + useDate.replace(/-/g,'') + '.csv');
-
-  // 消込済／残高への書き戻し（銀行を経由していないことをタグで区別する。一部だけ使った場合は残高を更新して未出金に残す）
-  showLoad(true);
-  const writebacks = [];
-  const docsAll = loadDocs();
-  if (item.source === 'docs'){
-    const rec = docsAll.find(d => String(d.id) === String(item.raw.id));
-    if (rec){
-      if (newBalance <= 0){
-        rec.payoutDone = true; rec.payoutDate = useDate; rec.payoutMethod = '内部消化'; rec.payoutAccount = account; rec.payoutBalance = 0;
-      } else {
-        rec.payoutBalance = newBalance;
-      }
-    }
-    saveDocs(docsAll);
-  } else {
-    const rec = Object.assign({}, item.raw);
-    if (newBalance <= 0){
-      rec.memo = setMemoTag(rec.memo, '出金済', '1');
-      rec.memo = setMemoTag(rec.memo, '出金日', useDate);
-      rec.memo = setMemoTag(rec.memo, '出金方法', '内部消化');
-      rec.memo = setMemoTag(rec.memo, '消込先', account);
-      rec.memo = setMemoTag(rec.memo, '残高', null);
-    } else {
-      rec.memo = setMemoTag(rec.memo, '残高', newBalance);
-    }
-    const url = (item.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
-    writebacks.push(fetch(url).then(r=>r.json()));
-  }
-
-  Promise.allSettled(writebacks).then(results => {
-    showLoad(false);
-    const failed = results.filter(r => r.status === 'rejected' || (r.value && r.value.status !== 'ok')).length;
-    if (failed){
-      msgBox('pu-msg', 'CSVは出力しましたが、GAS側への反映が' + failed + '件失敗しました。「最新の状態を取得」で再確認してください。', 'err');
-    } else {
-      msgBox('pu-msg', '¥' + amount.toLocaleString() + '分を「消込済（内部消化）」にし、CSVを出力しました', 'ok');
-    }
-    puAmountDirty = false;
-    refreshPending();
-  });
+  document.getElementById('pu-amount').value = '';
+  document.getElementById('pu-memo').value = '';
+  msgBox('pu-msg', '「1. 未出金の一覧」にマイナス取引として追加しました', 'ok');
+  refreshPending();
+}
+function deleteInternalUseRecord(id){
+  if (!confirm('このマイナス取引を削除しますか？')) return;
+  saveInternal(loadInternal().filter(d => d.id !== id));
+  refreshPending();
 }
 
 // ===== 現金化登録 =====
@@ -971,6 +906,7 @@ function clearAllLocal(){
   if (!confirm('書類・現金化のローカルデータを全て削除します。よろしいですか？（GAS側のバイク・小物データは削除されません）')) return;
   localStorage.removeItem(LS_DOCS);
   localStorage.removeItem(LS_CASH);
+  localStorage.removeItem(LS_INTERNAL);
   renderDocList(); renderCashList();
   toast('削除しました', 'ok');
 }
