@@ -143,6 +143,14 @@
       <div class="field"><label>銀行入金額（円） *</label><input type="text" inputmode="numeric" id="pd-bank" placeholder="0" oninput="updatePayoutDiff()"></div>
     </div>
     <div id="payout-diff-check" style="font-size:12px;margin-bottom:8px"></div>
+    <div class="field" id="pd-diff-handling-field" style="display:none;margin-bottom:10px">
+      <label>差額の扱い</label>
+      <select id="pd-diff-handling">
+        <option value="none">まだ選ばない（今は警告だけでよい）</option>
+        <option value="owner">事業主借として処理する（私物の売却など、事業と関係ないお金が混ざった）</option>
+        <option value="ignore">仕訳には含めず、そのまま無視する（非推奨・借貸不一致のまま出力）</option>
+      </select>
+    </div>
     <div class="btn-group">
       <button class="btn btn-primary" onclick="exportPayoutJournalCSV()">CSVを出力して出金済にする</button>
     </div>
@@ -582,14 +590,18 @@ function getSelectedPayoutTotal(){
 }
 function updatePayoutDiff(){
   const box = document.getElementById('payout-diff-check');
+  const diffField = document.getElementById('pd-diff-handling-field');
   const selectedTotal = getSelectedPayoutTotal();
   const bank = num('pd-bank');
   const fee = num('pd-fee');
-  if (!selectedTotal){ box.innerHTML=''; return; }
+  if (!selectedTotal){ box.innerHTML=''; diffField.style.display='none'; return; }
   const diff = selectedTotal - (bank + fee);
   if (diff === 0){
     box.innerHTML = '<span style="color:var(--accent)">選択した未収入金合計 ¥' + selectedTotal.toLocaleString() + ' と、銀行入金額＋振込手数料が一致しています ✓</span>';
+    diffField.style.display = 'none';
+    document.getElementById('pd-diff-handling').value = 'none';
   } else {
+    diffField.style.display = '';
     box.innerHTML = '<span style="color:#e66">選択した未収入金合計 ¥' + selectedTotal.toLocaleString() + ' に対して、差額 ¥' + diff.toLocaleString() + ' あります</span>';
   }
 }
@@ -617,8 +629,17 @@ function exportPayoutJournalCSV(){
     if (!confirm('選んだ口座「' + account + '」と、案件の入金先が一致しないものが' + mismatched.length + '件あります。\n' + list + '\n\nこのまま続けますか？')) return;
   }
 
-  if (receivableTotal !== bank + fee){
-    if (!confirm('未収入金合計（内部消化のマイナス分を差し引いたもの）と（銀行入金額＋振込手数料）が一致していません。\n未収入金合計：¥' + receivableTotal.toLocaleString() + '\n銀行入金額＋手数料：¥' + (bank+fee).toLocaleString() + '\n\nこのまま続けますか？')) return;
+  const diffHandling = v('pd-diff-handling');
+  const diff = receivableTotal - (bank + fee); // 正：未収入金の方が多い（入金不足）／負：銀行入金の方が多い（過剰入金＝私物売却分など）
+
+  if (diff !== 0) {
+    if (diffHandling === 'none') {
+      msgBox('payout-msg', '未収入金合計と（銀行入金額＋振込手数料）が一致していません。上の「差額の扱い」で処理方法を選んでからやり直してください。', 'err');
+      return;
+    }
+    if (diffHandling === 'ignore') {
+      if (!confirm('差額を仕訳に含めず、貸借不一致のまま出力します。よろしいですか？\n未収入金合計：¥' + receivableTotal.toLocaleString() + '\n銀行入金額＋手数料：¥' + (bank+fee).toLocaleString())) return;
+    }
   }
 
   const no = 'PO' + payoutDate.replace(/-/g,''); // 伝票番号：出金消込と分かるよう接頭辞を付けて重複を防ぐ
@@ -629,6 +650,16 @@ function exportPayoutJournalCSV(){
   ];
   if (fee > 0) rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, '', '', '', '振込手数料']);
   rows.push(['[明細行]', dateSlash, no, '', '', '', '未収入金', '', receivableTotal, '未収入金の取り崩し']);
+  // 差額を事業主借／事業主貸として処理する場合、貸借を合わせるための調整行を追加する
+  if (diff !== 0 && diffHandling === 'owner') {
+    if (diff < 0) {
+      // 銀行入金の方が多い＝私物売却分など、事業と関係ないお金が混ざって多く入ってきた
+      rows.push(['[明細行]', dateSlash, no, '', '', '', '事業主借', '', Math.abs(diff), '私物売却など事業に関係ない入金（差額調整）']);
+    } else {
+      // 未収入金の方が多い＝選んだ案件の割に実際の入金が少ない
+      rows.push(['[明細行]', dateSlash, no, '事業主貸', '', diff, '', '', '', '差額調整（事業主貸）']);
+    }
+  }
   // 内部消化（銀行を経由せず、メルカリ内でそのまま使った分）を、それぞれ1行ずつ追加
   internalItems.forEach(p => {
     const rec = p.raw;
