@@ -79,6 +79,9 @@
     <div class="btn-group" style="margin-top:0;margin-bottom:10px">
       <button class="btn btn-primary" onclick="refreshPending()">最新の状態を取得</button>
     </div>
+    <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <input type="checkbox" id="pu-fetch-all"> 全期間を取得する（普段は不要。売却済み・出金済みで13か月より前の古い記録も含めて探したいときだけON）
+    </label>
     <div id="fetch-status" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
     <div class="scrollbox" id="payout-pending-list"><p class="empty">「最新の状態を取得」を押してください</p></div>
   </div>
@@ -87,7 +90,7 @@
     <h2>2. メルカリ内でそのまま仕入・費用に使った場合の消込（銀行を経由しない）</h2>
     <p class="desc"><strong>メルカリ内で使った分がなければ、ここは使いません。</strong>「何月何日に、いくら分をメルカリ内で使った」という取引をここで登録すると、「1. 未出金の一覧」に<strong>マイナスの取引として追加</strong>されます。お金は銀行を経由していないので「普通預金」ではなく、仕入・費用の勘定科目に対して未収入金を直接取り崩す仕訳を作ります。</p>
     <div class="row2">
-      <div class="field"><label>使用日（メルカリ内で購入した日） *</label><input type="date" id="pu-date"></div>
+      <div class="field"><label>使用日（メルカリ内で購入した日） *</label><input type="date" id="pu-date" onchange="togglePuCustom()"></div>
       <div class="field"><label>金額（円） *</label><input type="text" inputmode="numeric" id="pu-amount" placeholder="例：3000"></div>
     </div>
     <div class="row2">
@@ -106,8 +109,12 @@
       <div class="field">
         <label>税区分</label>
         <select id="pu-tax">
-          <option value="課対仕入10%">課対仕入10%</option>
-          <option value="課対仕入8%（軽減）">課対仕入8%（軽減）</option>
+          <option value="課対仕入10%">課対仕入10%（適格＝インボイスあり）</option>
+          <option value="課対仕入（控80）10%">課対仕入（控80）10%（個人から仕入・経過措置80%控除／〜2026/9）</option>
+          <option value="課対仕入（控50）10%">課対仕入（控50）10%（個人から仕入・経過措置50%控除／2026/10〜）</option>
+          <option value="課対仕入8%（軽減）">課対仕入8%（軽減）（適格＝インボイスあり）</option>
+          <option value="課対仕入（控80）8%（軽減）">課対仕入（控80）8%（軽減）（個人から仕入・経過措置80%控除／〜2026/9）</option>
+          <option value="課対仕入（控50）8%（軽減）">課対仕入（控50）8%（軽減）（個人から仕入・経過措置50%控除／2026/10〜）</option>
           <option value="対象外">対象外</option>
         </select>
       </div>
@@ -376,11 +383,24 @@ function fetchGAS(url){
   });
 }
 
+// ===== 取得の絞り込み（since） =====
+// GAS側は「未売却の在庫」「未出金の払出」は常に返してくれるので、
+// ここでの絞り込みは「売却済み・出金済みで完全に終わった古い記録」を
+// 取得対象から外すためだけのもの（在庫・未収金の追跡には影響しない）。
+function getSinceParam(){
+  const monthsBack = document.getElementById('pu-fetch-all')?.checked ? null : 13; // 直近13か月（＋未処理分は無条件）
+  if (monthsBack === null) return '';
+  const d = new Date();
+  d.setMonth(d.getMonth() - monthsBack);
+  return '?since=' + d.toISOString().slice(0,10);
+}
+
 function refreshPending(){
   const statusEl = document.getElementById('fetch-status');
   statusEl.textContent = '取得中...';
   showLoad(true);
-  Promise.allSettled([fetchGAS(GAS_BIKE), fetchGAS(GAS_PARTS)]).then(([bikeRes, partsRes])=>{
+  const since = getSinceParam();
+  Promise.allSettled([fetchGAS(GAS_BIKE + since), fetchGAS(GAS_PARTS + since)]).then(([bikeRes, partsRes])=>{
     showLoad(false);
     const errors = [];
     if (bikeRes.status === 'fulfilled') bikeEntries = bikeRes.value;
@@ -655,11 +675,22 @@ function exportPayoutJournalCSV(){
 }
 
 // ===== メルカリ内でそのまま仕入・費用に使った場合の消込（銀行を経由しない） =====
+// メルカリの出品者は基本的に「適格請求書発行事業者でない個人」のため、
+// 経過措置の税区分（控80／控50）をデフォルトにする。切り替わりの基準日は2026/10/1。
+function suggestPuTax(){
+  const account = v('pu-account');
+  if (account === '事業主貸') return '対象外';
+  if (account === '__custom') return null; // 自由入力科目は判断できないので変更しない
+  const dateStr = v('pu-date');
+  const useDate = dateStr ? new Date(dateStr) : new Date();
+  const cutover = new Date('2026-10-01');
+  return useDate < cutover ? '課対仕入（控80）10%' : '課対仕入（控50）10%';
+}
 function togglePuCustom(){
   const isCustom = v('pu-account') === '__custom';
   document.getElementById('pu-custom-field').style.display = isCustom ? '' : 'none';
-  // 事業主貸は経費ではなく事業主への資金の払い戻しなので、税区分は対象外になる
-  if (v('pu-account') === '事業主貸') document.getElementById('pu-tax').value = '対象外';
+  const suggested = suggestPuTax();
+  if (suggested) document.getElementById('pu-tax').value = suggested;
 }
 function getPuAccountName(){
   const sel = v('pu-account');
