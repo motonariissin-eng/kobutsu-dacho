@@ -511,6 +511,7 @@
     <div id="m-body"></div>
     <div class="btn-group" style="margin-top:14px">
       <button class="btn btn-primary" onclick="editEntry()">編集</button>
+      <button class="btn btn-secondary" onclick="exportSingleJournalCSV()">freee用CSV出力（この1件）</button>
       <button class="btn btn-danger" onclick="deleteEntry()">ローカルから削除</button>
       <button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
     </div>
@@ -2183,6 +2184,51 @@ function exportPurchaseJournalCSV() {
 
   downloadCSV(header, rows, '仕入登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
   toast(data.length + '件のfreee用CSVを出力しました', 'ok');
+}
+
+// ---- CSV：台帳一覧の詳細モーダルから、その1件だけをfreee用に出力 ----
+// 訂正（編集）した直後にその1件だけを個別出力したい場合に使う。
+// 期間指定の一括出力（exportSalesJournalCSV／exportPurchaseJournalCSV）と伝票No.の接頭辞・列構成を揃えているため、
+// 同じ台帳データを重複して出力しても伝票No.が重複しない（＝freee側で二重に取り込まれる心配がない）。
+function exportSingleJournalCSV() {
+  if (!currentUID) return;
+  const d = load().find(r => String(r.uid) === String(currentUID));
+  if (!d) { toast('データが見つかりません', 'err'); return; }
+
+  const header = ['[表題行]', '日付', '伝票No.', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '取引先', '摘要'];
+  const dateSlash = fmtDateSlashFull(d.date);
+
+  if (isOutKubun(d.kubun)) {
+    const sales = salesAmount(d);
+    if (!(sales > 0)) { toast('売上金額が0円のため出力できません', 'err'); return; }
+    const fee = parseInt(d.platformFee) || 0;
+    const ship = parseInt(d.shipping) || 0;
+    const item = (d.feature || '').replace(/\n/g, ' ');
+    const no = 'BS' + String(parseInt(d.id, 10) || 1);
+    const account = receiveMethodOf(d) === '現金' ? '現金' : '未収入金';
+    const rows = [['[明細行]', dateSlash, no, account, '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]];
+    if (fee > 0) rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, account, '', fee, d.name || '', 'プラットフォーム手数料：' + item]);
+    if (ship > 0) rows.push(['[明細行]', dateSlash, no, '荷造運賃', '課対仕入10%', ship, account, '', ship, d.name || '', '送料・梱包費：' + item]);
+    downloadCSV(header, rows, '売上登録_freee用_払出' + (d.id || '') + '_' + todayISO().replace(/-/g, '') + '.csv');
+    toast('払出-' + (d.id || '') + ' のfreee用CSVを出力しました', 'ok');
+  } else if (isInKubun(d.kubun)) {
+    const price = parseInt(d.price) || 0;
+    if (!(price > 0)) { toast('取得価格が0円のため出力できません', 'err'); return; }
+    if (purchasePayMethodOf(d) === '未収入金') {
+      toast('支払方法が「メルカリ残高」のためこのCSVには対応していません（統合出金消込ツールをご利用ください）', 'err');
+      return;
+    }
+    const f = parseFeature(d.feature);
+    const item = [f.maker, f.model].filter(Boolean).join(' ') || d.category || '';
+    const no = 'BI' + String(parseInt(d.id, 10) || 1);
+    const account = purchaseAccountOf(d);
+    const payMethod = purchasePayMethodOf(d);
+    const rows = [['[明細行]', dateSlash, no, account, '課対仕入10%', price, payMethod, '', price, d.name || '', '仕入：' + item]];
+    downloadCSV(header, rows, '仕入登録_freee用_受入' + (d.id || '') + '_' + todayISO().replace(/-/g, '') + '.csv');
+    toast('受入-' + (d.id || '') + ' のfreee用CSVを出力しました', 'ok');
+  } else {
+    toast('この区分はfreee出力に対応していません', 'err');
+  }
 }
 
 
