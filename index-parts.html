@@ -879,11 +879,64 @@ function parseMetaTags(row) {
 }
 
 // ===== ローカル全件をGASへ一括アップロード（上書き、バッチ分割） =====
+// ===== ローカル全件をGASへ一括アップロード（上書き、バッチ分割） =====
+// 送信前に、統合出金消込ツールがGAS側だけに直接書き込む「出金済／出金日／出金方法／消込先／残高」タグを
+// GASの最新値でローカルにマージしてから送る。これをしないと、ローカルが古いままの時に
+// 上書き送信でこれらのタグを消してしまい、出金済のはずの案件が未出金一覧に復活してしまう。
 function pushAllToGAS() {
   const data = load();
   if (!data.length) { toast('ローカルにデータがありません', 'err'); return; }
   if (!confirm('ローカルの' + data.length + '件で、GAS側のデータを完全に上書きします。よろしいですか？')) return;
 
+  showLoad(true, 'GASの最新状態を確認中...');
+  setSyncBox('GASの最新状態を確認中（出金済タグの消失を防ぐため）...', 'loading');
+
+  const preCheckController = new AbortController();
+  const preCheckTimer = setTimeout(() => preCheckController.abort(), 30000);
+  fetch(GAS, { signal: preCheckController.signal })
+    .then(r => r.json())
+    .then(res => {
+      clearTimeout(preCheckTimer);
+      const gasData = (res && Array.isArray(res.entries)) ? res.entries : [];
+      const mergedCount = mergePayoutTagsFromGAS(data, gasData);
+      if (mergedCount) save(data); // マージ結果はローカルにも反映しておく
+      startPushBatches(data, mergedCount);
+    })
+    .catch(() => {
+      clearTimeout(preCheckTimer);
+      // GAS側の最新状態が確認できない場合、古いローカルデータで上書きしてタグを消してしまう危険があるため、
+      // 安全側に倒してアップロードを中止する。
+      showLoad(false);
+      setSyncBox('GASの最新状態が確認できなかったため、アップロードを中止しました（出金済タグ消失防止のため）。通信環境を確認して再度お試しください。', 'err');
+      toast('中止しました：GASの状態を確認できませんでした', 'err');
+    });
+}
+
+// GAS側の「出金済／出金日／出金方法／消込先／残高」タグを、同じuidのローカルレコードにマージする。
+// これらのタグは統合出金消込ツールだけが更新するため、GAS側の値を正として扱う。
+function mergePayoutTagsFromGAS(localData, gasData) {
+  const TAGS = ['出金済', '出金日', '出金方法', '消込先', '残高'];
+  const gasByUid = {};
+  gasData.forEach(r => { gasByUid[String(r.uid)] = r; });
+  let mergedCount = 0;
+  localData.forEach(rec => {
+    const gasRec = gasByUid[String(rec.uid)];
+    if (!gasRec) return;
+    let changed = false;
+    TAGS.forEach(tag => {
+      const gasVal = parseMemoTag(gasRec.memo, tag);
+      const localVal = parseMemoTag(rec.memo, tag);
+      if (gasVal !== localVal) {
+        rec.memo = setMemoTag(rec.memo, tag, gasVal || null);
+        changed = true;
+      }
+    });
+    if (changed) mergedCount++;
+  });
+  return mergedCount;
+}
+
+function startPushBatches(data, mergedCount) {
   // 日本語が多いとURLエンコードで膨らみ、件数固定だとURLが長すぎて
   // 送信に失敗することがあるため、エンコード後の文字数を基準に動的分割する。
   const MAX_URL_CHARS = 1800;
@@ -902,16 +955,17 @@ function pushAllToGAS() {
   });
   if (current.length) batches.push(current);
 
+  const mergedNote = mergedCount ? '（出金済タグ等を' + mergedCount + '件補正）' : '';
   showLoad(true, 'アップロード中... (0/' + batches.length + ')');
-  setSyncBox('アップロード中... (0/' + batches.length + ')', 'loading');
+  setSyncBox('アップロード中... (0/' + batches.length + ')' + mergedNote, 'loading');
 
   let idx = 0;
   let retryCount = 0;
   function sendNext() {
     if (idx >= batches.length) {
       showLoad(false);
-      setSyncBox('アップロード完了 ' + data.length + '件（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
-      toast('GASへ' + data.length + '件アップロードしました', 'ok');
+      setSyncBox('アップロード完了 ' + data.length + '件' + mergedNote + '（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+      toast('GASへ' + data.length + '件アップロードしました' + mergedNote, 'ok');
       return;
     }
     const isFirst = idx === 0;
@@ -929,7 +983,7 @@ function pushAllToGAS() {
         if (res && res.status === 'ok') {
           idx++; retryCount = 0;
           showLoad(true, 'アップロード中... (' + idx + '/' + batches.length + ')');
-          setSyncBox('アップロード中... (' + idx + '/' + batches.length + ')', 'loading');
+          setSyncBox('アップロード中... (' + idx + '/' + batches.length + ')' + mergedNote, 'loading');
           sendNext();
         } else {
           showLoad(false);
