@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>古物台帳（バイク部品）</title>
+<title>古物台帳</title>
 <style>
   :root {
     --bg: #0f0f0f;
@@ -125,18 +125,8 @@
   <option value="KYMCO">
 </datalist>
 
-<!-- 品目候補リスト（一覧から選んでも、一覧にない文字を自由入力してもOK） -->
-<datalist id="item-list">
-  <option value="バックレスト">
-  <option value="リアキャリア">
-  <option value="リアボックス">
-  <option value="工具">
-  <option value="ETC">
-  <option value="マフラー">
-</datalist>
-
 <header>
-  <h1>⚙ 古物台帳（バイク部品）</h1>
+  <h1>⚙ 古物台帳</h1>
   <span id="hCount">-</span>
 </header>
 
@@ -154,24 +144,19 @@
     <div class="next-id" id="nextInId">受入番号: 計算中...</div>
     <h2>受入（買受）登録</h2>
 
-    <div class="field">
-      <label>取得の由来（仕入ではない場合のクイック入力）</label>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="quickOrigin('attached')">🏍 バイクに付属していた（無償）</button>
-        <button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="quickOrigin('gift')">🎁 無償で譲り受けた</button>
-      </div>
-    </div>
-
     <div class="field"><label>取引年月日 *</label><input type="date" id="in-date"></div>
     <div class="field">
-      <label>品目 *</label>
-      <input type="text" id="in-category" list="item-list" placeholder="一覧から選択、または自由に記載（例：グリップヒーター）">
+      <label>品目・種別 *</label>
+      <select id="in-category">
+        <option value="">選択してください</option>
+        <option>自動二輪車</option><option>原動機付自転車</option><option>バイク部品</option>
+        <option>自動車</option><option>自動車部品</option><option>その他</option>
+      </select>
     </div>
     <div class="field"><label>メーカー</label><input type="text" id="in-maker" list="maker-list" placeholder="例：HONDA（一覧から選択、または自由入力）"></div>
     <div class="field"><label>車名・品名 *</label><input type="text" id="in-model" placeholder="例：スーパーカブ110"></div>
     <div class="field"><label>車台番号（フレームNo）</label><input type="text" id="in-frame" placeholder="例：JA44-1002305"></div>
     <div class="row2">
-      <div class="field"><label>年式</label><input type="text" inputmode="numeric" id="in-age" placeholder="例：2020"></div>
       <div class="field"><label>数量</label><input type="text" inputmode="numeric" id="in-qty" value="1"></div>
     </div>
     <div class="field">
@@ -245,25 +230,44 @@
     <div class="field"><label>取引年月日 *</label><input type="date" id="out-date"></div>
     <div class="field">
       <label>対応する受入番号（在庫から選択）</label>
-      <input type="text" id="out-linked-search" placeholder="車台番号・車名・メーカー・年式・受入番号で絞り込み" oninput="renderLinkedOptions()" style="margin-bottom:6px">
+      <input type="text" id="out-linked-search" placeholder="車台番号・車名・メーカー・受入番号で絞り込み" oninput="renderLinkedOptions()" style="margin-bottom:6px">
       <select id="out-linked"><option value="">（紐付けなし）</option></select>
       <div id="out-linked-count" style="font-size:11px;color:var(--text2);margin-top:3px"></div>
     </div>
     <div class="field">
-      <label>品目 *</label>
-      <input type="text" id="out-category" list="item-list" placeholder="一覧から選択、または自由に記載（例：グリップヒーター）">
+      <label>品目・種別 *</label>
+      <select id="out-category">
+        <option value="">選択してください</option>
+        <option>自動二輪車</option><option>原動機付自転車</option><option>バイク部品</option>
+        <option>自動車</option><option>自動車部品</option><option>その他</option>
+      </select>
     </div>
     <div class="field"><label>メーカー</label><input type="text" id="out-maker" list="maker-list" placeholder="一覧から選択、または自由入力"></div>
     <div class="field"><label>車名・品名 *</label><input type="text" id="out-model"></div>
     <div class="field"><label>車台番号</label><input type="text" id="out-frame"></div>
     <div class="row2">
-      <div class="field"><label>年式</label><input type="text" inputmode="numeric" id="out-age"></div>
       <div class="field"><label>数量</label><input type="text" inputmode="numeric" id="out-qty" value="1"></div>
     </div>
     <div class="field">
-      <label>金額（円） *</label>
+      <label>合計金額（円） *</label>
       <input type="text" inputmode="numeric" id="out-total" placeholder="0" oninput="calcOutPrice()">
-      <div id="out-total-disp" style="font-size:18px;font-weight:700;color:var(--accent);margin-top:6px;min-height:24px;text-align:right"></div>
+    </div>
+    <div class="field">
+      <label>サービス料金</label>
+      <div id="service-quick-btns" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+      <div id="service-rows" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
+      <button type="button" class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="addServiceRow()">＋ 項目追加</button>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px">
+        <span>サービス料金計</span><span id="disp-service">¥ 0</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px">
+        <span>本体金額</span><span id="disp-body">¥ 0</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;color:var(--accent);border-top:1px solid var(--border);padding-top:6px;margin-top:2px">
+        <span>合計金額</span><span id="disp-total">¥ 0</span>
+      </div>
     </div>
     <input type="hidden" id="out-price">
 
@@ -290,9 +294,20 @@
         <option value="口座">口座入金（未収入金→統合出金消込ツールで消込）</option>
         <option value="現金">現金（その場で受け取り・銀行を経由しない）</option>
       </select>
-      <div style="font-size:11px;color:var(--text2);margin-top:4px">メルカリ・ジモティあんしん決済は「口座」、直接取引・現金での手渡しは「現金」を選んでください（ヤフオクはケースにより異なるため都度選択）</div>
+      <div id="out-receiveMethod-note" style="font-size:11px;color:var(--text2);margin-top:4px"></div>
     </div>
-    <div class="field"><label>相手方氏名・商号 *</label><input type="text" id="out-name" value="メルカリ購入者様"></div>
+
+    <div class="field">
+      <label>相手方氏名・商号 *</label>
+      <select id="out-channel" onchange="fillChannel()" style="margin-bottom:6px">
+        <option value="">取引先を選択...</option>
+        <option value="メルカリ">メルカリ</option>
+        <option value="ヤフオク">ヤフオク</option>
+        <option value="ジモティ">ジモティ</option>
+        <option value="直接取引">直接取引</option>
+      </select>
+      <input type="text" id="out-name">
+    </div>
     <div class="field"><label>住所</label><input type="text" id="out-address"></div>
     <div class="field"><label>職業</label><input type="text" id="out-job"></div>
     <div class="field"><label>年齢</label><input type="text" inputmode="numeric" id="out-age2"></div>
@@ -329,8 +344,8 @@
     </select>
     <select id="f-cat" onchange="renderList()">
       <option value="">全カテゴリ</option>
-      <option>バックレスト</option><option>リアキャリア</option><option>リアボックス</option>
-      <option>工具</option><option>ETC</option><option>マフラー</option>
+      <option>自動二輪車</option><option>原動機付自転車</option><option>バイク部品</option>
+      <option>自動車</option><option>自動車部品</option><option>その他</option>
     </select>
     <select id="f-pay" onchange="renderList()">
       <option value="">支払・入金方法（全て）</option>
@@ -411,7 +426,7 @@
 
   <div class="card">
     <h2>CSV　仕入登録用（買うごと）</h2>
-    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">受入（買受）データから、1件ごとに「勘定科目／支払方法」の仕訳（振替伝票）を出力します。freeeの［取引入力］→［振替伝票］→［インポート］→［他社会計ソフトインポート］で取り込んでください。「取引」への別入力は不要です。支払方法を「メルカリ残高」で登録した受入は、銀行を経由していないため、このCSVには含めません（統合出金消込ツールで処理してください）。取得価格0円（無償譲受等）の受入も対象外です。</p>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">受入（買受）データから、1件ごとに「勘定科目／支払方法」の仕訳（振替伝票）を出力します。freeeの［取引入力］→［振替伝票］→［インポート］→［他社会計ソフトインポート］で取り込んでください。「取引」への別入力は不要です。支払方法を「メルカリ残高」で登録した受入は、銀行を経由していないため、このCSVには含めません（統合出金消込ツールで処理してください）。</p>
     <div class="row2">
       <div class="field"><label>期間（開始・任意）</label><input type="date" id="purchase-from"></div>
       <div class="field"><label>期間（終了・任意）</label><input type="date" id="purchase-to"></div>
@@ -422,6 +437,7 @@
     </div>
     <div id="purchase-journal-preview" style="margin-top:12px"></div>
   </div>
+
 
   <div class="card">
     <h2>CSVエクスポート</h2>
@@ -501,30 +517,12 @@
   </div>
 </div>
 
-<!-- バイク本体台帳の受入を検索して引用するモーダル -->
-<div class="overlay" id="bikeRefOverlay" onclick="closeBikeRefModal(event)">
-  <div class="modal">
-    <h3>バイク本体台帳から受入を選択</h3>
-    <div class="field"><input type="text" id="bikeRefSearch" placeholder="車名・メーカー・車台番号・受入番号で検索" oninput="renderBikeRefList()"></div>
-    <div id="bikeRefStatus" style="font-size:12px;color:var(--text2);margin-bottom:8px">読み込み中...</div>
-    <div id="bikeRefList" style="max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
-    <div class="btn-group" style="margin-top:14px">
-      <button class="btn btn-secondary" onclick="closeBikeRefModal()">キャンセル</button>
-    </div>
-  </div>
-</div>
-
 <div class="loading" id="loading"><span>処理中...</span></div>
 <div id="toast"></div>
 
 <script>
-// 部品台帳専用のGAS（車両台帳とは別のスプレッドシート）
-const GAS = 'https://script.google.com/macros/s/AKfycbzbR0hubVD_B0bJSyxLUe1bhxYkFBFU_UhzuulJNqB_WjMJ9DHSnMJ1E5l2oCjLwdlu/exec';
-const LS = 'kobutu_parts_v1';
-
-// バイク本体台帳（index.html）のGAS。読み取り専用で使い、
-// 「バイクに付属していた」部品の受入元を検索・引用するためだけに使用する（部品台帳側からの書き込みは行わない）。
-const BIKE_GAS = 'https://script.google.com/macros/s/AKfycbyzPq8wPrhrlkNExoz0vppHMnbwMZxMxUhtsBo9hGt2gMr54FyHhkm77ywET7hOB0Zi/exec';
+const GAS = 'https://script.google.com/macros/s/AKfycbyzPq8wPrhrlkNExoz0vppHMnbwMZxMxUhtsBo9hGt2gMr54FyHhkm77ywET7hOB0Zi/exec';
+const LS = 'kobutu_v2';
 
 // ===== ローカルストレージ =====
 function load() { try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e) { return []; } }
@@ -649,7 +647,7 @@ function tab(id, btn) {
 
 // ===== 受入保存 =====
 // 実際のGASスキーマ(FIELDS): uid,id,date,kubun,category,qty,feature,price,age,idMethod,idNo,name,address,job,memo,sold,createdAt,linkedInId,totalPrice,serviceFee
-// （platformFeeのみGAS側に列がないため保存されず、memo内の[手数料:xxx]タグとしてのみ記録される）
+// （platformFee・shippingはGAS側に列がないため保存されず、memo内の[手数料:xxx][送料:xxx]タグとしてのみ記録される）
 function submitIn() {
   const isEditing = editMode === 'in';
   const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
@@ -724,20 +722,25 @@ function submitOut() {
   const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
   const nextOut = (isEditing && existing) ? existing.id : nextOutId();
 
-  calcOutPrice(); // hidden の out-price を最新化（部品台帳では金額そのもの）
+  calcOutPrice(); // hidden の out-price（本体金額）を最新化
   const linkedInId = v('out-linked');
   const totalPrice = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
-  const bodyPrice = totalPrice;
-  const serviceFee = 0;
+  const bodyPrice = parseInt(document.getElementById('out-price').value) || 0;
+  const serviceFee = Math.max(0, totalPrice - bodyPrice);
   const platformFee = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
   const shipping = parseInt((document.getElementById('out-shipping')?.value||'').replace(/,/g,'')) || 0;
   const receiveMethod = v('out-receiveMethod') || '口座';
-  const serviceMemo = '';
+  const serviceMemo = getServiceMemo();
 
   // memoに付帯情報を埋め込み（後で正規表現で抽出できる形式）
   // ※[手数料:xxx] はプラットフォーム手数料。サービス料金（[作業費:xxx]）とは別物で、
   //   物品の売却価格（本体金額/price）の計算には一切含めていない。
-  // ※[送料:xxx] は発送用の送料・梱包費。freeeでは「荷造運賃」として別仕訳で計上する。
+  // ※[送料:xxx] は発送用の送料・梱包費。プラットフォーム手数料と同じ扱いで、
+  //   物品の売却価格には一切影響させず、freeeでは「荷造運賃」として別仕訳で計上する。
+  // 出金済・出金日は本フォームには入力欄がないため、編集時は既存の値をそのまま引き継ぐ
+  const payoutDone = (isEditing && existing) ? !!existing.payoutDone : false;
+  const payoutDate = (isEditing && existing) ? (existing.payoutDate || '') : '';
+
   const metaTags = [];
   if (linkedInId) metaTags.push('[対応受入:' + linkedInId + ']');
   if (totalPrice) metaTags.push('[合計金額:' + totalPrice + ']');
@@ -745,6 +748,8 @@ function submitOut() {
   if (platformFee) metaTags.push('[手数料:' + platformFee + ']');
   if (shipping) metaTags.push('[送料:' + shipping + ']');
   if (receiveMethod) metaTags.push('[入金方法:' + receiveMethod + ']');
+  if (payoutDone) metaTags.push('[出金済:1]');
+  if (payoutDate) metaTags.push('[出金日:' + payoutDate + ']');
   const fullMemo = [metaTags.join(''), v('out-memo'), serviceMemo].filter(Boolean).join(' ');
 
   const rec = {
@@ -765,12 +770,14 @@ function submitOut() {
     memo: fullMemo,
     sold: (isEditing && existing) ? existing.sold : false,
     createdAt: (isEditing && existing) ? existing.createdAt : new Date().toISOString(),
-    // GAS側にも同名の列があるため保存される（platformFee/shippingは列がなくmemoタグのみ）
+    // GAS側にも同名の列があるため保存される（platformFee/shipping/payoutDone/payoutDateは列がなくmemoタグのみ）
     linkedInId: linkedInId,
     totalPrice: totalPrice,
     serviceFee: serviceFee,
     platformFee: platformFee,
-    shipping: shipping
+    shipping: shipping,
+    payoutDone: payoutDone,
+    payoutDate: payoutDate
   };
 
   if (!rec.date || !rec.category || !v('out-model') || !rec.name) {
@@ -862,7 +869,7 @@ function submitOut() {
 }
 
 // ===== memo内の付帯情報タグを復元 =====
-// submitOutで埋め込んだ [対応受入:5][合計金額:50000][作業費:3000][手数料:5000][送料:210] を解析してフィールドに戻す
+// submitOutで埋め込んだ [対応受入:5][合計金額:50000][作業費:3000][手数料:5000][送料:800] を解析してフィールドに戻す
 function parseMetaTags(row) {
   if (!row.memo) return;
   if (typeof row.memo !== 'string') row.memo = String(row.memo);
@@ -870,12 +877,16 @@ function parseMetaTags(row) {
   const m2 = row.memo.match(/\[合計金額:([^\]]+)\]/);
   const m3 = row.memo.match(/\[作業費:([^\]]+)\]/);
   const m4 = row.memo.match(/\[手数料:([^\]]+)\]/);
-  const m5 = row.memo.match(/\[送料:([^\]]+)\]/);
+  const m5 = row.memo.match(/\[出金日:([^\]]+)\]/);
+  const m6 = row.memo.match(/\[出金済:([^\]]+)\]/);
+  const m7 = row.memo.match(/\[送料:([^\]]+)\]/);
   if (m1) row.linkedInId = m1[1];
   if (m2) row.totalPrice = parseInt(m2[1]) || 0;
   if (m3) row.serviceFee = parseInt(m3[1]) || 0;
   if (m4) row.platformFee = parseInt(m4[1]) || 0;
-  if (m5) row.shipping = parseInt(m5[1]) || 0;
+  if (m5) row.payoutDate = m5[1];
+  row.payoutDone = !!(m6 && m6[1] === '1');
+  if (m7) row.shipping = parseInt(m7[1]) || 0;
 }
 
 // ===== ローカル全件をGASへ一括アップロード（上書き、バッチ分割） =====
@@ -1085,6 +1096,8 @@ function renderList() {
   const pay = document.getElementById('f-pay').value;
   const txt = document.getElementById('f-text').value.toLowerCase();
 
+  // 受入は「支払方法」（現金／普通預金／未収入金など）、払出は「入金方法」（現金／口座）で判定。
+  // フィルタの「口座」は受入の普通預金・払出の口座の両方にマッチさせ、「その他」は未収入金や自由入力分にマッチさせる。
   function payGroupOf(d) {
     const isIn = isInKubun(d.kubun);
     const raw = isIn ? purchasePayMethodOf(d) : receiveMethodOf(d);
@@ -1124,7 +1137,7 @@ function renderList() {
     const soldFlag = isIn && allData.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(entryId));
     return `<div class="entry ${isIn?'in':'out'}" onclick="showDetail('${d.uid}')">
       <div class="e-top">
-        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}${(isIn && purchasePayMethodOf(d)==='未収入金')?'<span class="sold-tag">メルカリ残高</span>':''}${(isIn && purchasePayMethodOf(d)==='普通預金')?'<span class="sold-tag">口座払い</span>':''}${(!isIn && receiveMethodOf(d)==='現金')?'<span class="sold-tag">現金受取</span>':''}</span>
+        <span class="e-id">${isIn?'受入':'払出'}-${entryId}${soldFlag?'<span class="sold-tag">売済</span>':''}${(isIn && purchasePayMethodOf(d)==='未収入金')?'<span class="sold-tag">メルカリ残高</span>':''}${(isIn && purchasePayMethodOf(d)==='普通預金')?'<span class="sold-tag">口座払い</span>':''}${(!isIn && receiveMethodOf(d)==='現金')?'<span class="sold-tag">現金受取</span>':''}${(!isIn && d.payoutDone)?'<span class="sold-tag">出金済</span>':''}</span>
         <span class="e-date">${d.date||''}</span>
       </div>
       <div class="e-cat">${d.category||''}</div>
@@ -1153,7 +1166,6 @@ function showDetail(u) {
     ['メーカー', f.maker],
     ['車名・品名', f.model],
     ['車台番号', f.frame],
-    ['年式', d.age],
     ['数量', d.qty],
     ['価格', (() => { const amt = displayPrice(d); return amt ? '¥' + Number(amt).toLocaleString() : ''; })()],
     ['相手方', d.name],
@@ -1199,7 +1211,6 @@ function editEntry() {
     document.getElementById('in-maker').value = f.maker || '';
     document.getElementById('in-model').value = f.model || '';
     document.getElementById('in-frame').value = f.frame || '';
-    document.getElementById('in-age').value = d.age || '';
     document.getElementById('in-qty').value = d.qty || '1';
     document.getElementById('in-price').value = d.price || '';
     showInPrice();
@@ -1224,9 +1235,9 @@ function editEntry() {
       const inRec = load().find(r => String(r.id) === String(d.linkedInId) && isInKubun(r.kubun));
       if (inRec) {
         const f2 = parseFeature(inRec.feature);
-        stockCache.push({ id: d.linkedInId, maker: f2.maker || '', model: f2.model || '', frame: f2.frame || '', age: inRec.age || '', category: inRec.category || '', editing: true });
+        stockCache.push({ id: d.linkedInId, maker: f2.maker || '', model: f2.model || '', frame: f2.frame || '', category: inRec.category || '', editing: true });
       } else {
-        stockCache.push({ id: d.linkedInId, maker: '（編集中・対応する受入データが見つかりません）', model: '', frame: '', age: '', category: '', editing: true });
+        stockCache.push({ id: d.linkedInId, maker: '（編集中・対応する受入データが見つかりません）', model: '', frame: '', category: '', editing: true });
       }
       renderLinkedOptions();
     }
@@ -1236,9 +1247,22 @@ function editEntry() {
     document.getElementById('out-maker').value = f.maker || '';
     document.getElementById('out-model').value = f.model || '';
     document.getElementById('out-frame').value = f.frame || '';
-    document.getElementById('out-age').value = d.age || '';
     document.getElementById('out-qty').value = d.qty || '1';
     document.getElementById('out-total').value = d.totalPrice || d.price || '';
+    document.getElementById('service-rows').innerHTML = '';
+    serviceRowCount = 0;
+    // 個別の作業項目（品目ごとの内訳）はタグ化されておらず復元できないが、
+    // 作業費"合計"はserviceFeeとして保持されているため、1行にまとめて復元し
+    // 本体金額／作業費の按分が保存時に崩れないようにする。
+    if (d.serviceFee && parseInt(d.serviceFee) > 0) {
+      addServiceRow();
+      const lastRow = document.querySelector('#service-rows > div:last-child');
+      if (lastRow) {
+        const inputs = lastRow.querySelectorAll('input');
+        inputs[0].value = '（編集前のサービス料金合計・内訳は備考欄を確認）';
+        inputs[1].value = d.serviceFee;
+      }
+    }
     calcOutPrice();
     document.getElementById('out-platformfee').value = d.platformFee || '';
     showPlatformFee();
@@ -1246,6 +1270,8 @@ function editEntry() {
     showShippingFee();
     const rmEl = document.getElementById('out-receiveMethod');
     if (rmEl) rmEl.value = receiveMethodOf(d);
+    const rmNoteEl = document.getElementById('out-receiveMethod-note');
+    if (rmNoteEl) rmNoteEl.textContent = '';
     document.getElementById('out-age2').value = d.age || '';
     document.getElementById('out-idMethod').value = d.idMethod || '';
     document.getElementById('out-idNo').value = d.idNo || '';
@@ -1288,7 +1314,7 @@ function updateLinkedSelect() {
     .filter(d => isInKubun(d.kubun) && !all.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id)))
     .map(d => {
       const f = parseFeature(d.feature);
-      return { id: d.id, maker: f.maker || '', model: f.model || '', frame: f.frame || '', age: d.age || '', category: d.category || '' };
+      return { id: d.id, maker: f.maker || '', model: f.model || '', frame: f.frame || '', category: d.category || '' };
     });
   const searchEl = document.getElementById('out-linked-search');
   if (searchEl) searchEl.value = '';
@@ -1301,14 +1327,14 @@ function renderLinkedOptions() {
   const kw = (document.getElementById('out-linked-search')?.value || '').trim().toLowerCase();
 
   const filtered = !kw ? stockCache : stockCache.filter(d => {
-    const hay = [d.id, d.maker, d.model, d.frame, d.age, d.category].join(' ').toLowerCase();
+    const hay = [d.id, d.maker, d.model, d.frame, d.category].join(' ').toLowerCase();
     return hay.includes(kw);
   });
 
   sel.innerHTML = '<option value="">（紐付けなし）</option>' +
     filtered.map(d => {
       const label = [d.maker, d.model].filter(Boolean).join(' ');
-      const sub = [d.frame, d.age ? d.age + '年' : ''].filter(Boolean).join(' / ');
+      const sub = [d.frame].filter(Boolean).join(' / ');
       const tail = (sub ? '（' + sub + '）' : '') + (d.editing ? '（編集中）' : '');
       return `<option value="${d.id}">${d.id} — ${label}${tail}</option>`;
     }).join('');
@@ -1323,6 +1349,39 @@ function renderLinkedOptions() {
     countEl.textContent = kw
       ? `${filtered.length} / ${stockCache.length} 件表示中`
       : `在庫 ${stockCache.length} 件`;
+  }
+}
+
+// ===== 払出：取引先プルダウン（氏名欄への反映） =====
+// メルカリ・ジモティは相手方の実名が分からないことが多いため、取引先名をそのまま氏名欄に入れる。
+// 直接取引の場合は実名を手入力するため、氏名欄を空にしてフォーカスするだけにする。
+function fillChannel() {
+  const sel = document.getElementById('out-channel');
+  const nameEl = document.getElementById('out-name');
+  const val = sel.value;
+  if (!val) return;
+  nameEl.value = (val === '直接取引') ? '' : val;
+  nameEl.focus();
+
+  // 入金方法の自動セット：メルカリは必ず口座を経由する。直接取引は必ず現金。
+  // ジモティは基本「現金」（手渡し）がデフォルト。あんしん決済で手数料が発生する場合のみ「口座」に切り替える
+  // （手数料の入力欄と連動：showPlatformFeeで手数料が入るとジモティなら自動で口座に切り替わる）。
+  // ヤフオクは現金・口座どちらもあり得るため、自動セットせず都度選んでもらう。
+  const rmEl = document.getElementById('out-receiveMethod');
+  const noteEl = document.getElementById('out-receiveMethod-note');
+  if (rmEl) {
+    if (val === 'メルカリ') {
+      rmEl.value = '口座';
+      if (noteEl) noteEl.textContent = '';
+    } else if (val === '直接取引') {
+      rmEl.value = '現金';
+      if (noteEl) noteEl.textContent = '';
+    } else if (val === 'ヤフオク') {
+      if (noteEl) noteEl.textContent = 'ヤフオクは基本的に口座（落札者からの振込）ですが、現金のこともあるため実際の受け取り方法を選び直してください。手数料は一律¥1,980です';
+    } else if (val === 'ジモティ') {
+      rmEl.value = '現金';
+      if (noteEl) noteEl.textContent = 'ジモティは現金（手渡し）がデフォルトです。あんしん決済で手数料がかかる場合は、下の「プラットフォーム手数料」に金額を入れると自動で「口座」に切り替わります';
+    }
   }
 }
 
@@ -1367,12 +1426,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('out-maker').value = f.maker;
     document.getElementById('out-model').value = f.model;
     document.getElementById('out-frame').value = f.frame;
-    document.getElementById('out-age').value = rec.age || '';
   });
   setToday();
   updateNextIds();
   updateHeaderCount();
   buildPartnerButtons();
+  buildServiceQuickButtons();
   buildPlatformFeeButtons();
   toggleInCustomFields();
 });
@@ -1381,7 +1440,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function v(id) { return (document.getElementById(id)?.value||'').trim(); }
 
 function clearIn() {
-  ['in-category','in-maker','in-model','in-frame','in-age','in-price','in-age2','in-idMethod','in-idNo','in-name','in-address','in-job','in-memo','in-paymethod-custom','in-account-custom']
+  ['in-category','in-maker','in-model','in-frame','in-price','in-age2','in-idMethod','in-idNo','in-name','in-address','in-job','in-memo','in-paymethod-custom','in-account-custom']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('in-qty').value='1';
   document.getElementById('in-date').value = todayISO();
@@ -1394,13 +1453,12 @@ function clearIn() {
 }
 
 function clearOut() {
-  ['out-linked','out-linked-search','out-category','out-maker','out-model','out-frame','out-age','out-total','out-price','out-age2','out-idMethod','out-idNo','out-address','out-job','out-memo']
+  ['out-linked','out-linked-search','out-category','out-maker','out-model','out-frame','out-total','out-price','out-age2','out-idMethod','out-idNo','out-name','out-address','out-job','out-memo']
     .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('out-qty').value='1';
   document.getElementById('out-date').value = todayISO();
-  document.getElementById('out-name').value = 'メルカリ購入者様'; // 相手方氏名のデフォルト（必要に応じて修正可）
-  const rmEl = document.getElementById('out-receiveMethod');
-  if (rmEl) rmEl.value = '口座';
+  document.getElementById('service-rows').innerHTML = '';
+  serviceRowCount = 0;
   const feeEl = document.getElementById('out-platformfee');
   if (feeEl) feeEl.value = '';
   showPlatformFee();
@@ -1408,6 +1466,12 @@ function clearOut() {
   if (shipEl) shipEl.value = '';
   showShippingFee();
   calcOutPrice();
+  const channelEl = document.getElementById('out-channel');
+  if (channelEl) channelEl.value = '';
+  const rmEl = document.getElementById('out-receiveMethod');
+  if (rmEl) rmEl.value = '口座';
+  const rmNoteEl = document.getElementById('out-receiveMethod-note');
+  if (rmNoteEl) rmNoteEl.textContent = '';
   if (editMode === 'out') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); updateLinkedSelect(); }
   else { updateLinkedSelect(); }
   document.querySelector('#t-out .btn-primary').textContent = 'GASに保存';
@@ -1436,121 +1500,26 @@ function showInPrice() {
   el.textContent = val ? '¥ ' + val.toLocaleString() : '';
 }
 
-// ===== 受入：仕入を伴わない取得（バイク付属／無償譲受）のクイック入力 =====
-// 対価の授受がないため取得価格は0円とし、備考に出所（由来）を明記する。
-// 「バイク付属」の場合は、BIKE_GAS（バイク本体台帳・読み取り専用）に問い合わせて
-// 実際の受入レコードを検索・選択できるようにし、番号の記憶違いを防ぐ。
-let bikeRefCache = null; // { list: [...], fetchedAt: Date } 検索モーダルを開くたびに再取得する
+// ===== 払出：作業費行の追加・削除・計算 =====
+let serviceRowCount = 0;
 
-function quickOrigin(type) {
-  if (type === 'attached') {
-    openBikeRefModal();
-    return;
-  }
-  if (type === 'gift') {
-    document.getElementById('in-price').value = '0';
-    showInPrice();
-    applyOriginMemo('[由来:無償譲受]');
-    toast('取得価格を0円にし、由来を備考に記載しました', 'ok');
-  }
-}
-
-// 既存の[由来:...]タグがあれば置き換え、なければ備考の先頭に追加する
-function applyOriginMemo(note) {
-  const memoEl = document.getElementById('in-memo');
-  const re = /\[由来:[^\]]*\][^\n]*/;
-  const current = memoEl.value || '';
-  memoEl.value = re.test(current) ? current.replace(re, note) : (note + (current ? '\n' + current : ''));
-}
-
-function openBikeRefModal() {
-  document.getElementById('bikeRefOverlay').classList.add('open');
-  document.getElementById('bikeRefSearch').value = '';
-  document.getElementById('bikeRefStatus').textContent = '読み込み中...';
-  document.getElementById('bikeRefList').innerHTML = '';
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
-  fetch(BIKE_GAS, { signal: controller.signal })
-    .then(r => r.json())
-    .then(res => {
-      clearTimeout(timer);
-      if (!res || !Array.isArray(res.entries)) {
-        document.getElementById('bikeRefStatus').textContent = 'バイク本体台帳の取得に失敗しました: ' + (res?.message || JSON.stringify(res));
-        return;
-      }
-      bikeRefCache = res.entries
-        .filter(r => r.kubun && r.kubun.includes('受入'))
-        .sort((a, b) => (a.date < b.date ? 1 : -1));
-      document.getElementById('bikeRefStatus').textContent = bikeRefCache.length + '件の受入があります（検索して選択してください）';
-      renderBikeRefList();
-    })
-    .catch(err => {
-      clearTimeout(timer);
-      document.getElementById('bikeRefStatus').textContent = err && err.name === 'AbortError' ? 'タイムアウトしました' : 'バイク本体台帳への接続に失敗しました';
-    });
-}
-
-function closeBikeRefModal(e) {
-  if (e && e.target !== e.currentTarget) return; // オーバーレイの背景クリックのみ閉じる（モーダル内クリックは無視）
-  document.getElementById('bikeRefOverlay').classList.remove('open');
-}
-
-let currentBikeRefFiltered = [];
-
-function renderBikeRefList() {
-  const wrap = document.getElementById('bikeRefList');
-  if (!bikeRefCache) return;
-  const kw = (document.getElementById('bikeRefSearch').value || '').trim().toLowerCase();
-  const filtered = !kw ? bikeRefCache : bikeRefCache.filter(r => {
-    const hay = [r.id, r.date, r.feature, r.name].filter(Boolean).join(' ').toLowerCase();
-    return hay.includes(kw);
-  });
-  currentBikeRefFiltered = filtered.slice(0, 100);
-
-  if (!currentBikeRefFiltered.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">該当する受入が見つかりません</p>'; return; }
-
-  wrap.innerHTML = currentBikeRefFiltered.map((r, i) => `
-    <div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;font-size:12px" onclick="selectBikeRefByIndex(${i})">
-      <div><b>受入-${r.id}</b>　${r.date || ''}</div>
-      <div style="color:var(--text2);margin-top:2px">${(r.feature||'').replace(/\n/g,' ') || '（品名なし）'}</div>
-    </div>
-  `).join('');
-}
-
-function selectBikeRefByIndex(i) {
-  const r = currentBikeRefFiltered[i];
-  if (!r) return;
-  document.getElementById('in-price').value = '0';
-  showInPrice();
-  const item = (r.feature || '').replace(/\n/g, ' ');
-  applyOriginMemo('[由来:バイク付属][対応バイク受入:' + r.id + '] バイク台帳 受入-' + r.id + (item ? '（' + item + '）' : '') + ' に付属');
-
-  // 受入年月日も引用（バイクの受入日＝部品を取得した日と同一のため）
-  const quotedDate = normalizeDateStr(r.date);
-  if (quotedDate) document.getElementById('in-date').value = quotedDate;
-
-  // 相手方情報も引用（バイク受入時の取引相手＝この部品の出所と同一人物のため）
-  document.getElementById('in-name').value = r.name || '';
-  document.getElementById('in-address').value = r.address || '';
-  document.getElementById('in-job').value = r.job || '';
-  document.getElementById('in-age2').value = r.age || '';
-  document.getElementById('in-idMethod').value = r.idMethod || '';
-  document.getElementById('in-idNo').value = r.idNo || '';
-
-  closeBikeRefModal();
-  toast('取得価格を0円にし、引用元・取引年月日・相手方情報を反映しました', 'ok');
-}
-
-// ===== 払出：金額表示 =====
-// 部品台帳ではサービス料金の内訳を持たないため、サービス行の追加・削除機能は不要。
+// デフォルトでよく使う作業項目（価格は変動する場合があるため、後で自由に編集可能）
+const SERVICE_PRESETS = [
+  { label: 'オイル交換', amount: 500 },
+  { label: 'プラグ交換', amount: 500 },
+  { label: 'グリップ交換', amount: 500 },
+  { label: 'タイヤ交換', amount: 2000 },
+  { label: 'バッテリー交換', amount: 2000 },
+  { label: 'バルブ交換', amount: 500 }
+];
 
 // 販売プラットフォームの手数料（合計金額に対する割合）
 // ※サービス料金（整備代等）とは別枠。物品の売却価格（本体金額）には一切影響させず、
 //   freee側で「支出・手数料」として別計上するための金額として保持するのみ。
 const PLATFORM_FEE_PRESETS = [
   { label: 'メルカリ(10%)', rate: 0.10 },
-  { label: 'ジモティあんしん決済(5%)', rate: 0.05 }
+  { label: 'ジモティあんしん決済(5%)', rate: 0.05 },
+  { label: 'ヤフオク(¥1,980固定)', flat: 1980 }
 ];
 
 function buildPlatformFeeButtons() {
@@ -1564,8 +1533,13 @@ function buildPlatformFeeButtons() {
 function applyPlatformFee(idx) {
   const p = PLATFORM_FEE_PRESETS[idx];
   if (!p) return;
-  const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
-  const fee = Math.floor(total * p.rate); // 端数は切り捨て（例：¥8888→¥888、¥7777→¥777）
+  let fee;
+  if (p.flat !== undefined) {
+    fee = p.flat; // ヤフオクなど、売却価格に関係なく一律の手数料
+  } else {
+    const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
+    fee = Math.round(total * p.rate);
+  }
   document.getElementById('out-platformfee').value = fee;
   showPlatformFee();
 }
@@ -1574,24 +1548,79 @@ function showPlatformFee() {
   const val = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
   const el = document.getElementById('disp-platformfee');
   if (el) el.textContent = '¥ ' + val.toLocaleString();
+
+  // ジモティは手数料の有無で入金方法を自動切り替え：手数料あり＝あんしん決済（口座）、なし＝手渡し（現金）
+  const channelEl = document.getElementById('out-channel');
+  const rmEl = document.getElementById('out-receiveMethod');
+  if (channelEl && rmEl && channelEl.value === 'ジモティ') {
+    rmEl.value = val > 0 ? '口座' : '現金';
+  }
 }
 
+// 送料・梱包費はプラットフォーム手数料と同じ扱い：売却価格（本体金額）には一切影響させず、
+// freee側で「支出・荷造運賃」として別計上するための金額として保持するのみ。
 function showShippingFee() {
   const val = parseInt((document.getElementById('out-shipping')?.value||'').replace(/,/g,'')) || 0;
   const el = document.getElementById('disp-shipping');
   if (el) el.textContent = '¥ ' + val.toLocaleString();
 }
 
-function calcOutPrice() {
-  const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
-  document.getElementById('out-price').value = total || '';
-  const el = document.getElementById('out-total-disp');
-  if (el) el.textContent = total ? '¥ ' + total.toLocaleString() : '';
+function buildServiceQuickButtons() {
+  const c = document.getElementById('service-quick-btns');
+  if (!c) return;
+  c.innerHTML = SERVICE_PRESETS.map((p, i) =>
+    `<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 12px" onclick="addServiceRow('${p.label}', ${p.amount})">＋ ${p.label}（¥${p.amount.toLocaleString()}）</button>`
+  ).join('');
 }
 
-// 部品台帳ではサービス料金の内訳は持たない（常に空文字を返す）
+function addServiceRow(presetLabel, presetAmount) {
+  serviceRowCount++;
+  const id = 'srow-' + serviceRowCount;
+  const div = document.createElement('div');
+  div.id = id;
+  div.style.cssText = 'display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center';
+  const labelVal = presetLabel ? presetLabel.replace(/"/g,'&quot;') : '';
+  const amountVal = presetAmount ? presetAmount : '';
+  div.innerHTML =
+    '<input type="text" placeholder="例：オイル交換" value="' + labelVal + '" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;outline:none;font-family:inherit">' +
+    '<input type="text" inputmode="numeric" placeholder="金額" value="' + amountVal + '" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 8px;font-size:12px;outline:none;width:90px;text-align:right;font-family:inherit" oninput="calcOutPrice()">' +
+    '<button type="button" onclick="removeServiceRow(\'' + id + '\')" style="background:var(--danger);border:none;border-radius:4px;color:#fff;padding:6px 8px;font-size:12px;cursor:pointer;line-height:1">✕</button>';
+  document.getElementById('service-rows').appendChild(div);
+  calcOutPrice();
+}
+
+function removeServiceRow(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+  calcOutPrice();
+}
+
+function calcOutPrice() {
+  const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
+  let serviceSum = 0;
+  document.querySelectorAll('#service-rows > div').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const amt = parseInt((inputs[1]?.value||'').replace(/,/g,'')) || 0;
+    serviceSum += amt;
+  });
+  const body = Math.max(0, total - serviceSum);
+  document.getElementById('disp-total').textContent   = '¥ ' + total.toLocaleString();
+  document.getElementById('disp-service').textContent = '¥ ' + serviceSum.toLocaleString();
+  document.getElementById('disp-body').textContent    = '¥ ' + body.toLocaleString();
+  // hidden フィールドに本体金額をセット（台帳に記録する金額）
+  document.getElementById('out-price').value = body || '';
+}
+
+// サービス行のメモをまとめてmemoに付加する処理
 function getServiceMemo() {
-  return '';
+  const rows = [];
+  document.querySelectorAll('#service-rows > div').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const label = inputs[0]?.value?.trim() || '';
+    const amt   = parseInt((inputs[1]?.value||'').replace(/,/g,'')) || 0;
+    if (label || amt) rows.push(label + (amt ? '：¥'+amt.toLocaleString() : ''));
+  });
+  return rows.join('、');
 }
 
 // ===== 統計（在庫 = 紐付けのある払出を除いた受入） =====
@@ -1946,19 +1975,18 @@ function importBackupJSON(input) {
 // [出金済:1][出金日:YYYY-MM-DD] タグを追加して管理する（platformFee等と同じ方式。出金消込は統合出金消込ツールで行う）。
 // CSV：売れるたびに作る。1台につき「未収入金／売上高」「支払手数料／未収入金」の振替伝票を出力（freeeの勘定科目や補助科目には触れず、freee側で借方・貸方の各列を指定してインポートする）。
 
+function fmtDateSlash(iso) {
+  if (!iso) return '';
+  const p = iso.split('-');
+  return p.length === 3 ? (parseInt(p[1]) + '/' + parseInt(p[2])) : iso;
+}
+
 // 売上金額：totalPrice（合計金額）が入っていればそれを、無ければ本体価格（price）を使う。
 // ※過去データはtotalPrice欄が使われる前に登録されたものが多く、priceのみに金額が入っている。
 function salesAmount(d) {
   const t = parseInt(d.totalPrice) || 0;
   if (t > 0) return t;
   return parseInt(d.price) || 0;
-}
-
-// freeeの「他社会計ソフトインポート」は日付が YYYY/MM/DD（スラッシュ区切り）である必要がある
-function fmtDateSlashFull(iso) {
-  if (!iso) return '';
-  const p = iso.split('-');
-  return p.length === 3 ? p.join('/') : iso;
 }
 
 // freeeの「仕訳インポート（他社会計ソフトインポート＝振替伝票）」はCSVアップロードのみ対応（xlsx不可）のため、
@@ -2029,6 +2057,13 @@ function previewSalesJournal() {
     </div>`;
 }
 
+// freeeの「他社会計ソフトインポート」は日付が YYYY/MM/DD（スラッシュ区切り）である必要がある
+function fmtDateSlashFull(iso) {
+  if (!iso) return '';
+  const p = iso.split('-');
+  return p.length === 3 ? p.join('/') : iso;
+}
+
 function exportSalesJournalCSV() {
   const data = getSalesJournalTargets();
   if (!data.length) { toast('対象データがありません', 'err'); return; }
@@ -2048,7 +2083,9 @@ function exportSalesJournalCSV() {
     const ship = parseInt(d.shipping) || 0;
     const item = (d.feature || '').replace(/\n/g, ' ');
     const dateSlash = fmtDateSlashFull(d.date);
-    const no = 'PS' + String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号：小物・売上と分かるよう接頭辞を付けて重複を防ぐ
+    const no = 'BS' + String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号：バイク・売上と分かるよう接頭辞を付けて重複を防ぐ
+    // 現金でその場受け取り（直接取引・ヤフオクの現金受取など）は「現金」、
+    // メルカリ・ジモティあんしん決済・ヤフオクの口座振込は「未収入金」（後で統合出金消込ツールで消込）。
     const account = receiveMethodOf(d) === '現金' ? '現金' : '未収入金';
     rows.push(['[明細行]', dateSlash, no, account, '', sales, '売上高', '課税売上10%', sales, d.name || '', '売却：' + item]);
     if (fee > 0) {
@@ -2128,6 +2165,7 @@ function exportPurchaseJournalCSV() {
     return;
   }
 
+  // freee「仕訳インポート（他社会計ソフトインポート＝振替伝票）」用の列形式（売上登録用CSVと同一仕様）。
   const header = ['[表題行]', '日付', '伝票No.', '借方勘定科目', '借方税区分', '借方金額', '貸方勘定科目', '貸方税区分', '貸方金額', '取引先', '摘要'];
   const rows = [];
   let denpyoSeq = 1;
@@ -2136,7 +2174,7 @@ function exportPurchaseJournalCSV() {
     const f = parseFeature(d.feature);
     const item = [f.maker, f.model].filter(Boolean).join(' ') || d.category || '';
     const dateSlash = fmtDateSlashFull(d.date);
-    const no = 'PI' + String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号：小物・仕入と分かるよう接頭辞を付けて重複を防ぐ
+    const no = 'BI' + String(parseInt(d.id, 10) || denpyoSeq); // 伝票番号：バイク・仕入と分かるよう接頭辞を付けて重複を防ぐ
     const account = purchaseAccountOf(d);
     const payMethod = purchasePayMethodOf(d);
     rows.push(['[明細行]', dateSlash, no, account, '課対仕入10%', price, payMethod, '', price, d.name || '', '仕入：' + item]);
@@ -2154,7 +2192,7 @@ function exportCSV(type) {
   if (type==='受入') data = data.filter(d=>isInKubun(d.kubun));
   else if (type==='払出') data = data.filter(d=>isOutKubun(d.kubun));
   if (!data.length) { toast('データなし','err'); return; }
-  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee','platformFee','shipping'];
+  const keys = ['uid','id','date','kubun','category','qty','feature','price','age','idMethod','idNo','name','address','job','memo','sold','createdAt','linkedInId','totalPrice','serviceFee','platformFee','shipping','payoutDone','payoutDate'];
   const csv = [keys.join(','), ...data.map(d=>keys.map(k=>'"'+String(d[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
