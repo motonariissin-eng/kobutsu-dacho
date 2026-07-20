@@ -249,6 +249,10 @@
       <select id="out-linked"><option value="">（紐付けなし）</option></select>
       <div id="out-linked-count" style="font-size:11px;color:var(--text2);margin-top:3px"></div>
     </div>
+    <div class="field" style="border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--surface2)">
+      <button type="button" class="btn btn-secondary" onclick="markOutAsInternalUse()">取付済み（在庫消費・売却なし）</button>
+      <div style="font-size:11px;color:var(--text2);margin-top:6px">部品を売らずに他のバイクへ取り付けた場合はこちら。金額0円・相手方情報を自動設定します（仕入時に費用計上済みのため追加の仕訳は不要）</div>
+    </div>
     <div class="field">
       <label>品目 *</label>
       <input type="text" id="out-category" list="item-list" placeholder="一覧から選択、または自由に記載（例：グリップヒーター）">
@@ -1748,6 +1752,27 @@ function calcOutPrice() {
   document.getElementById('out-price').value = total || '';
   const el = document.getElementById('out-total-disp');
   if (el) el.textContent = total ? '¥ ' + total.toLocaleString() : '';
+}
+
+// 部品を売却せず他のバイクへ取付・消費した場合のワンタッチ設定。
+// 仕入時点で費用計上済みのため、金額0円にして売上仕訳（getSalesJournalTargetsはsalesAmount>0のみ対象）を
+// 発生させずに在庫から外す。取付先の車両は備考に手動で追記してもらう。
+function markOutAsInternalUse() {
+  document.getElementById('out-total').value = '0';
+  calcOutPrice();
+  document.getElementById('out-platformfee').value = '';
+  showPlatformFee();
+  document.getElementById('out-shipping').value = '';
+  showShippingFee();
+  document.getElementById('out-name').value = '（社内使用・取付）';
+  const rm = document.getElementById('out-receiveMethod');
+  if (rm) rm.value = '現金';
+  const memoEl = document.getElementById('out-memo');
+  const note = '社内使用のため取付（在庫消費・仕入原価へ算入済み、売上計上なし）';
+  if (memoEl && !memoEl.value.includes(note)) {
+    memoEl.value = [note, memoEl.value].filter(Boolean).join('　');
+  }
+  toast('取付済み（在庫消費）用に設定しました。取付先の車台番号などを備考に追記してください', 'ok');
 }
 
 // 部品台帳ではサービス料金の内訳は持たない（常に空文字を返す）
