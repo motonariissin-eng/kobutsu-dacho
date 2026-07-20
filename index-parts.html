@@ -374,6 +374,9 @@
       <div style="font-size:11px;color:var(--text2);margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
         対応する受入番号が紐付いていない払出は、在庫の件数・金額に影響しません
       </div>
+      <div style="margin-top:10px">
+        <button class="btn btn-secondary" onclick="openStockListModal()">在庫一覧を開く</button>
+      </div>
     </div>
 
     <div class="stat" style="text-align:left">
@@ -494,6 +497,7 @@
     <h3 id="m-title">詳細</h3>
     <div id="m-body"></div>
     <div class="btn-group" style="margin-top:14px">
+      <button class="btn btn-primary" id="m-toOut-btn" onclick="createOutFromIn()" style="display:none">この受入から払出登録</button>
       <button class="btn btn-primary" onclick="editEntry()">編集</button>
       <button class="btn btn-danger" onclick="deleteEntry()">ローカルから削除</button>
       <button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
@@ -513,6 +517,20 @@
     </div>
   </div>
 </div>
+
+<!-- 在庫一覧（未売却の受入）から払出登録に直接進むモーダル -->
+<div class="overlay" id="stockListOverlay" onclick="closeStockListModal(event)">
+  <div class="modal">
+    <h3>在庫一覧（未売却の受入）</h3>
+    <div class="field"><input type="text" id="stockListSearch" placeholder="車名・メーカー・車台番号・受入番号で検索" oninput="renderStockList()"></div>
+    <div id="stockListStatus" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
+    <div id="stockListBody" style="max-height:55vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+    <div class="btn-group" style="margin-top:14px">
+      <button class="btn btn-secondary" onclick="closeStockListModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
 
 <div class="loading" id="loading"><span>処理中...</span></div>
 <div id="toast"></div>
@@ -1224,7 +1242,96 @@ function showDetail(u) {
   document.getElementById('m-body').innerHTML = rows.map(([l,v])=>
     `<div class="drow"><span class="dlabel">${l}</span><span class="dval">${v}</span></div>`
   ).join('');
+
+  const toOutBtn = document.getElementById('m-toOut-btn');
+  if (toOutBtn) {
+    const alreadySold = load().some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id));
+    toOutBtn.style.display = (isIn && !alreadySold) ? '' : 'none';
+  }
+
   document.getElementById('overlay').classList.add('open');
+}
+
+// 受入詳細モーダルから「この受入から払出登録」を押した際、払出タブに切り替えて
+// 対応する受入番号・車両情報を自動転記する
+function createOutFromIn() {
+  const d = load().find(r => String(r.uid) === String(currentUID));
+  if (!d || !isInKubun(d.kubun)) return;
+  if (load().some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id))) {
+    toast('この受入は既に売却済みです', 'err');
+    return;
+  }
+  closeModal();
+  startPayoutFromInId(d.id);
+}
+
+// 受入番号（在庫）を指定して払出タブへ切り替え、対応する受入番号・車両情報を自動転記する
+// createOutFromIn（詳細モーダル）と在庫一覧モーダルの両方から呼ばれる共通処理
+function startPayoutFromInId(inId) {
+  const outNavBtn = document.querySelector('nav button[onclick*="t-out"]');
+  tab('t-out', outNavBtn);
+  clearOut();
+  updateLinkedSelect();
+  const sel = document.getElementById('out-linked');
+  sel.value = inId;
+  sel.dispatchEvent(new Event('change'));
+  toast('受入' + inId + 'の情報を払出フォームに反映しました', 'ok');
+}
+
+// ===== 在庫一覧モーダル（データ管理タブから開く） =====
+let stockListCache = [];
+
+function openStockListModal() {
+  const all = load();
+  stockListCache = all
+    .filter(d => isInKubun(d.kubun) && !all.some(r => isOutKubun(r.kubun) && String(r.linkedInId) === String(d.id)))
+    .map(d => {
+      const f = parseFeature(d.feature);
+      return { id: d.id, date: d.date, maker: f.maker || '', model: f.model || '', frame: f.frame || '', age: d.age || '', category: d.category || '', price: d.price };
+    })
+    .sort((a, b) => Number(a.id) - Number(b.id));
+  document.getElementById('stockListSearch').value = '';
+  document.getElementById('stockListOverlay').classList.add('open');
+  renderStockList();
+}
+
+function closeStockListModal(e) {
+  if (!e || e.target === document.getElementById('stockListOverlay')) {
+    document.getElementById('stockListOverlay').classList.remove('open');
+  }
+}
+
+function renderStockList() {
+  const wrap = document.getElementById('stockListBody');
+  const kw = (document.getElementById('stockListSearch').value || '').trim().toLowerCase();
+  const filtered = !kw ? stockListCache : stockListCache.filter(d => {
+    const hay = [d.id, d.maker, d.model, d.frame, d.age, d.category].join(' ').toLowerCase();
+    return hay.includes(kw);
+  });
+
+  document.getElementById('stockListStatus').textContent = kw
+    ? `${filtered.length} / ${stockListCache.length} 件表示中`
+    : `在庫 ${stockListCache.length} 件`;
+
+  if (!filtered.length) { wrap.innerHTML = '<p style="font-size:12px;color:var(--text2)">該当する在庫が見つかりません</p>'; return; }
+
+  wrap.innerHTML = filtered.map(d => {
+    const label = [d.maker, d.model].filter(Boolean).join(' ') || '（品名なし）';
+    const sub = [d.frame, d.age ? d.age + '年' : '', d.category].filter(Boolean).join(' / ');
+    const priceTxt = d.price ? '¥' + Number(d.price).toLocaleString() : '';
+    return `
+      <div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px">
+        <div><b>受入-${d.id}</b>　${d.date || ''}${priceTxt ? '　' + priceTxt : ''}</div>
+        <div style="color:var(--text2);margin-top:2px">${label}${sub ? '（' + sub + '）' : ''}</div>
+        <div style="margin-top:6px"><button class="btn btn-primary" style="font-size:12px;padding:4px 10px" onclick="payoutFromStock('${d.id}')">この在庫を払出登録</button></div>
+      </div>
+    `;
+  }).join('');
+}
+
+function payoutFromStock(id) {
+  closeStockListModal();
+  startPayoutFromInId(id);
 }
 
 function closeModal(e) {
