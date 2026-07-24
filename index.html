@@ -905,21 +905,49 @@ function pushAllToGAS() {
   const preCheckController = new AbortController();
   const preCheckTimer = setTimeout(() => preCheckController.abort(), 30000);
   fetch(GAS, { signal: preCheckController.signal })
-    .then(r => r.json())
-    .then(res => {
+    .then(r => {
+      // HTTPステータスとレスポンス本文を保持しておき、JSON解析に失敗した場合の診断に使う
+      return r.text().then(bodyText => ({ ok: r.ok, status: r.status, bodyText }));
+    })
+    .then(({ ok, status, bodyText }) => {
       clearTimeout(preCheckTimer);
+      let res;
+      try {
+        res = JSON.parse(bodyText);
+      } catch (parseErr) {
+        // GASがJSON以外（HTMLのエラーページ・認証ページ等）を返してきたケース
+        const preview = (bodyText || '').replace(/\s+/g, ' ').trim().slice(0, 150);
+        throw new Error('GAS_BAD_RESPONSE:status=' + status + ':' + preview);
+      }
+      if (!ok) {
+        throw new Error('GAS_HTTP_ERROR:status=' + status + ':' + JSON.stringify(res).slice(0, 150));
+      }
       const gasData = (res && Array.isArray(res.entries)) ? res.entries : [];
       const mergedCount = mergePayoutTagsFromGAS(data, gasData);
       if (mergedCount) save(data); // マージ結果はローカルにも反映しておく
       startPushBatches(data, mergedCount);
     })
-    .catch(() => {
+    .catch(err => {
       clearTimeout(preCheckTimer);
       // GAS側の最新状態が確認できない場合、古いローカルデータで上書きしてタグを消してしまう危険があるため、
       // 安全側に倒してアップロードを中止する。
       showLoad(false);
-      setSyncBox('GASの最新状態が確認できなかったため、アップロードを中止しました（出金済タグ消失防止のため）。通信環境を確認して再度お試しください。', 'err');
-      toast('中止しました：GASの状態を確認できませんでした', 'err');
+      // エラーの種類を判別して、原因を画面上で確認できるようにする
+      let reason;
+      if (err && err.name === 'AbortError') {
+        reason = 'タイムアウト（30秒以内にGASから応答がありませんでした）';
+      } else if (err && err.message && err.message.startsWith('GAS_BAD_RESPONSE')) {
+        reason = 'GASがJSON以外の応答を返しました（' + err.message.replace('GAS_BAD_RESPONSE:', '') + '）';
+      } else if (err && err.message && err.message.startsWith('GAS_HTTP_ERROR')) {
+        reason = 'GASがエラー応答を返しました（' + err.message.replace('GAS_HTTP_ERROR:', '') + '）';
+      } else if (err && err.name === 'TypeError') {
+        reason = 'ネットワークに接続できませんでした（' + err.message + '）';
+      } else {
+        reason = (err && err.message) ? err.message : String(err);
+      }
+      console.error('GAS事前チェック失敗:', err);
+      setSyncBox('GASの最新状態が確認できなかったため、アップロードを中止しました（出金済タグ消失防止のため）。原因: ' + reason, 'err');
+      toast('中止しました：GASの状態を確認できませんでした（' + reason + '）', 'err');
     });
 }
 
@@ -1133,7 +1161,16 @@ function pingGAS() {
     })
     .catch(err => {
       clearTimeout(timer);
-      setSyncBox(err && err.name === 'AbortError' ? 'タイムアウト' : '接続エラー', 'err');
+      let reason;
+      if (err && err.name === 'AbortError') {
+        reason = 'タイムアウト（15秒以内に応答なし）';
+      } else if (err && err.name === 'TypeError') {
+        reason = 'ネットワークに接続できませんでした（' + err.message + '）';
+      } else {
+        reason = (err && err.message) ? err.message : String(err);
+      }
+      console.error('接続確認失敗:', err);
+      setSyncBox('接続エラー: ' + reason, 'err');
     });
 }
 
