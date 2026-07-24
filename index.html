@@ -576,12 +576,15 @@ function parseFeature(feature) {
 
 // ===== メモタグ（統合出金消込ツールと同じ埋め込み方式：支払方法・勘定科目を記録） =====
 function parseMemoTag(memo, tag){
-  const m = (memo || '').match(new RegExp('\\[' + tag + ':([^\\]]*)\\]'));
+  // memoがGASの生データ由来で文字列以外（数値・日付型など）の場合があるため、安全に文字列化する
+  const memoStr = (memo === null || memo === undefined) ? '' : String(memo);
+  const m = memoStr.match(new RegExp('\\[' + tag + ':([^\\]]*)\\]'));
   return m ? m[1] : '';
 }
 function setMemoTag(memo, tag, value){
   const re = new RegExp('\\[' + tag + ':[^\\]]*\\]', 'g');
-  let m = (memo || '').replace(re, '').trim();
+  const memoStr = (memo === null || memo === undefined) ? '' : String(memo);
+  let m = memoStr.replace(re, '').trim();
   if (value !== null && value !== undefined && value !== '') {
     m = ('[' + tag + ':' + value + ']' + (m ? ' ' + m : '')).trim();
   }
@@ -1372,7 +1375,7 @@ function editEntry() {
     // memoに埋め込まれた付帯タグ（対応受入・合計金額・作業費・手数料）を取り除いた残りを表示
     // ※個別の作業項目（品目名ごとの内訳）はタグ化されておらず備考に文字として混在しているため、
     //   service-rowsへの個別復元はできない（このアプリのデータ構造上、確認できません）。
-    let memo = d.memo || '';
+    let memo = (d.memo === null || d.memo === undefined) ? '' : String(d.memo);
     memo = memo.replace(/\[対応受入:[^\]]+\]/, '').replace(/\[合計金額:[^\]]+\]/, '').replace(/\[作業費:[^\]]+\]/, '').replace(/\[手数料:[^\]]+\]/, '').replace(/\[送料:[^\]]+\]/, '').replace(/\[入金方法:[^\]]+\]/, '').trim();
     document.getElementById('out-memo').value = memo;
     document.querySelector('#t-out .btn-primary').textContent = '更新を保存（編集中：払出-' + d.id + '）';
