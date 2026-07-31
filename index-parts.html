@@ -922,7 +922,8 @@ function pushAllToGAS() {
       const gasData = (res && Array.isArray(res.entries)) ? res.entries : [];
       const mergedCount = mergePayoutTagsFromGAS(data, gasData);
       if (mergedCount) save(data); // マージ結果はローカルにも反映しておく
-      startPushBatches(data, mergedCount);
+      // まずPOSTで全件を1リクエストにまとめて送る（高速）。失敗したら従来の分割送信にフォールバックする。
+      sendAllViaPost(data, mergedCount);
     })
     .catch(() => {
       clearTimeout(preCheckTimer);
@@ -956,6 +957,43 @@ function mergePayoutTagsFromGAS(localData, gasData) {
     if (changed) mergedCount++;
   });
   return mergedCount;
+}
+
+// ===== 全件をPOSTで1リクエストにまとめて送る（高速版・本命ルート） =====
+// GAS側の doPost が action=saveAll に対応していればこれだけで完了する。
+// GAS未対応（旧デプロイ）やネットワークエラーの場合は、従来の分割送信（startPushBatches）にフォールバックする。
+function sendAllViaPost(data, mergedCount) {
+  const mergedNote = mergedCount ? '（出金済タグ等を' + mergedCount + '件補正）' : '';
+  showLoad(true, 'GASへ一括送信中...(' + data.length + '件)');
+  setSyncBox('GASへ一括送信中...(' + data.length + '件)' + mergedNote, 'loading');
+
+  const controller = new AbortController();
+  // 全件まとめて送るため、件数が多い場合を考慮して分割送信より長めのタイムアウトにする
+  const timer = setTimeout(() => controller.abort(), 60000);
+
+  fetch(GAS, {
+    method: 'POST',
+    signal: controller.signal,
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Apps ScriptのdoPostで単純リクエストとして受けるための指定
+    body: JSON.stringify({ action: 'saveAll', records: data })
+  })
+    .then(r => r.json())
+    .then(res => {
+      clearTimeout(timer);
+      if (res && res.status === 'ok') {
+        showLoad(false);
+        setSyncBox('アップロード完了 ' + data.length + '件' + mergedNote + '（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+        toast('GASへ' + data.length + '件アップロードしました' + mergedNote, 'ok');
+      } else {
+        console.warn('POST一括送信が失敗レスポンスを返したため、従来方式（分割送信）にフォールバックします:', res);
+        startPushBatches(data, mergedCount);
+      }
+    })
+    .catch(err => {
+      clearTimeout(timer);
+      console.warn('POST一括送信に失敗したため、従来方式（分割送信）にフォールバックします:', err);
+      startPushBatches(data, mergedCount);
+    });
 }
 
 function startPushBatches(data, mergedCount) {
