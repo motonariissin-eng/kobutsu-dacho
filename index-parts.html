@@ -186,6 +186,7 @@
         <select id="in-paymethod" onchange="toggleInCustomFields()">
           <option value="現金">現金</option>
           <option value="普通預金">普通預金（銀行振込・引落）</option>
+          <option value="NICOSカード">NICOSカード</option>
           <option value="未収入金">メルカリ残高で購入（銀行を経由しない）</option>
           <option value="__custom">その他（自由入力）</option>
         </select>
@@ -1413,7 +1414,7 @@ function editEntry() {
     document.getElementById('in-address').value = d.address || '';
     document.getElementById('in-job').value = d.job || '';
     document.getElementById('in-memo').value = purchaseCleanMemo(d.memo);
-    setSelectOrCustom('in-paymethod', 'in-paymethod-custom-field', 'in-paymethod-custom', purchasePayMethodOf(d), ['現金','普通預金','未収入金']);
+    setSelectOrCustom('in-paymethod', 'in-paymethod-custom-field', 'in-paymethod-custom', purchasePayMethodOf(d), ['現金','普通預金','NICOSカード','未収入金']);
     setSelectOrCustom('in-account', 'in-account-custom-field', 'in-account-custom', purchaseAccountOf(d), ['仕入高','消耗品費','工具器具備品']);
     toggleInCustomFields();
     document.querySelector('#t-in .btn-primary').textContent = '更新を保存（編集中：受入-' + d.id + '）';
