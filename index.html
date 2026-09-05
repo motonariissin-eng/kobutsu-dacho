@@ -1631,31 +1631,44 @@ function fillChannel() {
   }
 }
 
-// ===== 業者マスタ（固定4件） =====
+// ===== 業者マスタ（固定4件＋個人） =====
+// 「個人」はプリセット業者ではなく、仕入れ先情報（氏名・住所・職業・年齢・本人確認方法・書類番号）を
+// 空欄にリセットして手入力を促すための特別枠。individual: true で判定する。
 const PARTNERS = [
   { label: 'モトレボ',  name: '株式会社 モトレボ 渡部伸正', address: '埼玉県所沢市中富280-3',         job: '古物商', age: '',   idMethod: '古物商同士の取引', idNo: '' },
-  { label: '山崎紅梅',  name: '山崎 紅梅',                  address: '埼玉県白岡市小久喜５５６番地１', job: '古物商', age: '50', idMethod: '古物商同士の取引', idNo: '431100033182' },
+  { label: '山崎紅梅',  name: '山崎 紅梅',                  address: '埼玉県白岡市小久喜556番地1',     job: '古物商', age: '50', idMethod: '古物商同士の取引', idNo: '431280058964' },
   { label: '川田商事',  name: '有限会社 川田商事',           address: '埼玉県熊谷市日向250番地',       job: '古物商', age: '',   idMethod: '運転免許証',       idNo: '' },
-  { label: "A's Wing", name: "A's Wing",                   address: '',                              job: '古物商', age: '',   idMethod: '古物商同士の取引', idNo: '' }
+  { label: "A's Wing", name: "A's Wing 河合 善昭",          address: '埼玉県入間市豊岡５丁目３番１６号 501', job: '古物商', age: '49', idMethod: '古物商同士の取引', idNo: '431100033182' },
+  { label: '個人', individual: true }
 ];
 
 function buildPartnerButtons() {
   const c = document.getElementById('partner-btns');
   if (!c) return;
   c.innerHTML = PARTNERS.map((p, i) =>
-    `<button type="button" class="btn btn-secondary" id="pbtn-${i}" style="font-size:12px;padding:6px 12px" onclick="fillPartner(${i})">${p.label}</button>`
+    `<button type="button" class="btn btn-secondary" id="pbtn-${i}" style="font-size:12px;padding:6px 12px${p.individual ? ';border-style:dashed' : ''}" onclick="fillPartner(${i})">${p.label}</button>`
   ).join('');
 }
 
 function fillPartner(idx) {
   const p = PARTNERS[idx];
   if (!p) return;
-  document.getElementById('in-name').value     = p.name;
-  document.getElementById('in-address').value  = p.address;
-  document.getElementById('in-job').value      = p.job;
-  document.getElementById('in-age2').value     = p.age;
-  document.getElementById('in-idMethod').value = p.idMethod;
-  document.getElementById('in-idNo').value     = p.idNo;
+  if (p.individual) {
+    // 個人：仕入れ先情報をリセットし、手入力してもらう
+    document.getElementById('in-name').value     = '';
+    document.getElementById('in-address').value  = '';
+    document.getElementById('in-job').value      = '';
+    document.getElementById('in-age2').value     = '';
+    document.getElementById('in-idMethod').value = '';
+    document.getElementById('in-idNo').value     = '';
+  } else {
+    document.getElementById('in-name').value     = p.name;
+    document.getElementById('in-address').value  = p.address;
+    document.getElementById('in-job').value      = p.job;
+    document.getElementById('in-age2').value     = p.age;
+    document.getElementById('in-idMethod').value = p.idMethod;
+    document.getElementById('in-idNo').value     = p.idNo;
+  }
   PARTNERS.forEach((_, i) => {
     const b = document.getElementById('pbtn-' + i);
     if (b) { b.style.borderColor = i===idx ? 'var(--accent)' : ''; b.style.color = i===idx ? 'var(--accent)' : ''; }
@@ -1677,6 +1690,7 @@ document.addEventListener('DOMContentLoaded', function() {
   updateNextIds();
   updateHeaderCount();
   buildPartnerButtons();
+  fillPartner(0); // 受入の取引相手は基本的に「モトレボ」をデフォルトにする
   buildServiceQuickButtons();
   buildPlatformFeeButtons();
   toggleInCustomFields();
@@ -1692,6 +1706,7 @@ function clearIn() {
   document.getElementById('in-date').value = todayISO();
   document.getElementById('in-paymethod').value = '現金';
   document.getElementById('in-account').value = '仕入高';
+  fillPartner(0); // 取引相手を基本のデフォルト「モトレボ」に戻す
   toggleInCustomFields();
   showInPrice();
   if (editMode === 'in') { editMode = null; editUID = null; toast('編集をキャンセルしました', 'ok'); }
