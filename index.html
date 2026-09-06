@@ -1835,9 +1835,12 @@ const SERVICE_PRESETS = [
 const PLATFORM_FEE_PRESETS = [
   { label: 'メルカリ(10%)', rate: 0.10 },
   { label: 'ジモティあんしん決済(5%)', rate: 0.05 },
-  { label: 'ヤフオク(¥1,980固定)', flat: 1980 },
-  { label: 'ヤフオク振込手数料(¥100・PayPay銀行以外)', flat: 100, add: true }
+  { label: 'ヤフオク(¥1,980固定)', flat: 1980 }
 ];
+// ★注：ヤフオク・ジモティの銀行振込手数料（¥100／¥150）は「振込依頼1回につき」発生するもので、
+//   個々の売却1件ごとにかかるものではない（複数件まとめて1回の振込依頼にできるため）。
+//   よってここ（1件ごとの登録画面）には含めず、統合出金消込ツール（payout.html）側の
+//   「今回の振込情報を入力」で、振込依頼のタイミングにまとめて1回分だけ入力する。
 
 function buildPlatformFeeButtons() {
   const c = document.getElementById('platform-fee-btns');
