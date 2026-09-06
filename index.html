@@ -411,6 +411,10 @@
     <div class="btn-group">
       <button class="btn btn-danger" onclick="pushAllToGAS()">ローカル全件をGASに上書き送信</button>
     </div>
+    <p style="font-size:12px;color:var(--text2);margin:10px 0 6px">表示用シート（古物台帳_表示）は1件登録ごとには自動更新されなくなりました。見た目を最新にしたい時だけ押してください。</p>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="refreshTableSheet()">表示用シートを更新</button>
+    </div>
   </div>
 
   <div class="card">
@@ -1206,6 +1210,33 @@ function syncFromGAS() {
     }
   }
   attempt();
+}
+
+// ===== 表示用シート（古物台帳_表示）を手動更新 =====
+// upsertEntry()側でrebuildTableSheet_()を毎回呼ぶのをやめたため、
+// 見た目のシートを最新化したい時はこのボタンから明示的に呼ぶ。
+function refreshTableSheet() {
+  setSyncBox('表示用シートを更新中...', 'loading');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  fetch(GAS + '?action=rebuildTable', { signal: controller.signal })
+    .then(r => r.json())
+    .then(res => {
+      clearTimeout(timer);
+      if (res && res.status === 'ok') {
+        setSyncBox('表示用シートを更新しました（' + new Date().toLocaleString('ja-JP') + '）', 'ok');
+        toast('表示用シートを更新しました', 'ok');
+      } else {
+        setSyncBox('更新失敗: ' + (res?.message || JSON.stringify(res)), 'err');
+        toast('更新失敗', 'err');
+      }
+    })
+    .catch(err => {
+      clearTimeout(timer);
+      const reason = err && err.name === 'AbortError' ? 'タイムアウト' : (err.message || String(err));
+      setSyncBox('更新エラー: ' + reason, 'err');
+      toast('更新エラー', 'err');
+    });
 }
 
 // ===== 接続確認 =====
