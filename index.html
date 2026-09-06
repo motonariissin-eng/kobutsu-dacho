@@ -353,6 +353,13 @@
       <option value="口座">口座（普通預金・銀行）</option>
       <option value="その他">その他（メルカリ残高等）</option>
     </select>
+    <select id="f-channel" onchange="renderList()">
+      <option value="">取引先（全て）</option>
+      <option value="メルカリ">メルカリ</option>
+      <option value="ヤフオク">ヤフオク</option>
+      <option value="ジモティ">ジモティ</option>
+      <option value="直接取引">直接取引</option>
+    </select>
     <input type="text" id="f-text" placeholder="車名・車台番号・相手方で検索" oninput="renderList()">
   </div>
   <div id="list-body" class="list"><p style="color:var(--text2);text-align:center;padding:20px">読み込み中...</p></div>
@@ -1282,7 +1289,19 @@ function renderList() {
   const kubun = document.getElementById('f-kubun').value;
   const cat = document.getElementById('f-cat').value;
   const pay = document.getElementById('f-pay').value;
+  const channel = document.getElementById('f-channel').value;
   const txt = document.getElementById('f-text').value.toLowerCase();
+
+  // 払出の取引先チャネル推定：out-channel自体は保存されず、選択時に氏名欄へ自動入力される値
+  // （fillChannel()）を手がかりに判定する。受入には該当しないためnullを返す。
+  function channelOf(d) {
+    if (isInKubun(d.kubun)) return null;
+    const nm = String(d.name || '');
+    if (nm.indexOf('メルカリ') === 0) return 'メルカリ';
+    if (nm.indexOf('ヤフオク') === 0) return 'ヤフオク';
+    if (nm.indexOf('ジモティ') === 0) return 'ジモティ';
+    return '直接取引';
+  }
 
   // 受入は「支払方法」（現金／普通預金／未収入金など）、払出は「入金方法」（現金／口座）で判定。
   // フィルタの「口座」は受入の普通預金・払出の口座の両方にマッチさせ、「その他」は未収入金や自由入力分にマッチさせる。
@@ -1300,6 +1319,10 @@ function renderList() {
     if (kubun === '払出' && !isOutKubun(d.kubun)) return false;
     if (cat && d.category !== cat) return false;
     if (pay && payGroupOf(d) !== pay) return false;
+    if (channel) {
+      if (isInKubun(d.kubun)) return false; // 受入にはチャネルの概念がないため、絞り込み時は除外
+      if (channelOf(d) !== channel) return false;
+    }
     if (txt) {
       const f = parseFeature(d.feature);
       const s = (f.model+f.maker+f.frame+d.name+'').toLowerCase();
@@ -1802,7 +1825,8 @@ const SERVICE_PRESETS = [
   { label: 'グリップ交換', amount: 500 },
   { label: 'タイヤ交換', amount: 2000 },
   { label: 'バッテリー交換', amount: 2000 },
-  { label: 'バルブ交換', amount: 500 }
+  { label: 'バルブ交換', amount: 500 },
+  { label: 'シート交換', amount: 2000 }
 ];
 
 // 販売プラットフォームの手数料（合計金額に対する割合）
@@ -1811,7 +1835,8 @@ const SERVICE_PRESETS = [
 const PLATFORM_FEE_PRESETS = [
   { label: 'メルカリ(10%)', rate: 0.10 },
   { label: 'ジモティあんしん決済(5%)', rate: 0.05 },
-  { label: 'ヤフオク(¥1,980固定)', flat: 1980 }
+  { label: 'ヤフオク(¥1,980固定)', flat: 1980 },
+  { label: 'ヤフオク振込手数料(¥100・PayPay銀行以外)', flat: 100, add: true }
 ];
 
 function buildPlatformFeeButtons() {
@@ -1832,7 +1857,13 @@ function applyPlatformFee(idx) {
     const total = parseInt((document.getElementById('out-total')?.value||'').replace(/,/g,'')) || 0;
     fee = Math.round(total * p.rate);
   }
-  document.getElementById('out-platformfee').value = fee;
+  if (p.add) {
+    // 既存の手数料額に上乗せする（例：ヤフオク落札システム手数料＋振込手数料）
+    const current = parseInt((document.getElementById('out-platformfee')?.value||'').replace(/,/g,'')) || 0;
+    document.getElementById('out-platformfee').value = current + fee;
+  } else {
+    document.getElementById('out-platformfee').value = fee;
+  }
   showPlatformFee();
 }
 
