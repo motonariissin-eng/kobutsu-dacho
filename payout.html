@@ -139,7 +139,7 @@
       <div class="field"><label>出金日（振込があった日） *</label><input type="date" id="pd-date"></div>
     </div>
     <div class="row2">
-      <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="pd-fee" placeholder="0" oninput="updatePayoutDiff()"></div>
+      <div class="field"><label>振込手数料（円）</label><input type="text" inputmode="numeric" id="pd-fee" placeholder="0" oninput="delete this.dataset.auto; updatePayoutDiff()"></div>
       <div class="field"><label>銀行入金額（円） *</label><input type="text" inputmode="numeric" id="pd-bank" placeholder="0" oninput="updatePayoutDiff()"></div>
     </div>
     <div id="payout-diff-check" style="font-size:12px;margin-bottom:8px"></div>
@@ -350,6 +350,17 @@ function bankAccountOf(rec){
   const nm = (rec.name || rec.item || '').trim();
   if (nm.includes('ヤフオク') || nm.includes('ジモティ')) return 'ゆうちょ銀行';
   return '埼玉縣信用金庫';
+}
+// ★追加：振込依頼1回につきかかる手数料（メルカリ¥200／ヤフオク¥100／ジモティ¥150、
+//   いずれも1回の振込依頼につき1回分。複数件まとめて依頼しても手数料は増えない）を
+//   自動入力するための、プラットフォーム判定と手数料テーブル。
+const WITHDRAWAL_FEE_BY_CHANNEL = { 'メルカリ': 200, 'ヤフオク': 100, 'ジモティ': 150 };
+function channelOf(rec){
+  const nm = (rec.name || rec.item || '').trim();
+  if (nm.includes('メルカリ')) return 'メルカリ';
+  if (nm.includes('ヤフオク')) return 'ヤフオク';
+  if (nm.includes('ジモティ')) return 'ジモティ';
+  return null;
 }
 function totalReceivableOf(rec){ return salesAmountOf(rec) - platformFeeOf(rec) - shippingOf(rec); }
 function remainingOf(rec){
@@ -581,7 +592,36 @@ function togglePayoutSelectAll(cb){
   updateSelectionSummary();
 }
 function updateSelectionSummary(){
+  autofillWithdrawalFee();
   updatePayoutDiff();
+}
+// ★追加：選択中の案件がすべて同じプラットフォーム（メルカリ／ヤフオク／ジモティ）なら、
+//   振込依頼1回分の手数料を自動入力する。手動で書き換えた値は上書きしない
+//   （pd-feeにこちらが入れた値かどうかをdata-auto属性で判定）。
+//   内部消化（internal）はプラットフォーム判定の対象外として無視する。
+function autofillWithdrawalFee(){
+  const feeEl = document.getElementById('pd-fee');
+  if (!feeEl) return;
+  const channels = new Set();
+  document.querySelectorAll('.pd-check:checked').forEach(el => {
+    const p = pendingList.find(x => x.key === el.value);
+    if (!p || p.source === 'internal') return;
+    const ch = channelOf(p.raw);
+    if (ch) channels.add(ch);
+  });
+  const isAutoValue = feeEl.dataset.auto === '1';
+  if (channels.size === 1) {
+    const ch = [...channels][0];
+    const fee = WITHDRAWAL_FEE_BY_CHANNEL[ch];
+    if (fee !== undefined && (feeEl.value === '' || isAutoValue)) {
+      feeEl.value = fee;
+      feeEl.dataset.auto = '1';
+    }
+  } else if (isAutoValue) {
+    // 複数プラットフォームが混在（本来は振込依頼ごとに分けるべき）、または対象なし→自動入力を取り消す
+    feeEl.value = '';
+    delete feeEl.dataset.auto;
+  }
 }
 function getSelectedPayoutTotal(){
   let sum = 0;
