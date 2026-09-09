@@ -22,6 +22,16 @@
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 12px; }
   .card h2 { font-size: 13px; color: var(--accent); margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
   .card p.desc { font-size: 12px; color: var(--text2); margin-bottom: 10px; }
+  .row-clickable { cursor: pointer; }
+  .row-clickable:hover { background: rgba(255,255,255,0.04); }
+  .detail-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center; }
+  .detail-overlay.show { display:flex; }
+  .detail-box { background: var(--surface); border:1px solid var(--border); border-radius:8px; padding:20px; max-width:520px; width:90%; max-height:80vh; overflow:auto; }
+  .detail-box h3 { color: var(--accent); font-size:14px; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  .detail-row { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); font-size:13px; }
+  .detail-row span:first-child { color: var(--text2); flex-shrink:0; }
+  .detail-row span:last-child { text-align:right; word-break:break-word; }
+  .detail-close { margin-top:14px; width:100%; }
   .field { margin-bottom: 10px; }
   .field label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 3px; }
   .field input, .field select, .field textarea {
@@ -557,21 +567,21 @@ function renderPendingList(){
         ${filtered.map(p => {
           if (p.source === 'internal'){
             return `
-            <tr>
-              <td><input type="checkbox" class="pd-check" value="${p.key}" data-amt="${p.receivable}" checked onchange="updateSelectionSummary()"></td>
+            <tr class="row-clickable" onclick="openDetailModal('${p.key}')">
+              <td onclick="event.stopPropagation()"><input type="checkbox" class="pd-check" value="${p.key}" data-amt="${p.receivable}" checked onchange="updateSelectionSummary()"></td>
               <td><span class="src-tag src-internal">内部消化</span></td>
               <td>${p.date}</td>
               <td>${p.item}</td>
               <td>${p.account}</td>
               <td class="num" style="color:#e66">-¥${Math.abs(p.receivable).toLocaleString()}</td>
-              <td><button type="button" class="btn btn-secondary" style="font-size:12px;padding:4px 10px" onclick="deleteInternalUseRecord(${p.raw.id})">削除</button></td>
+              <td onclick="event.stopPropagation()"><button type="button" class="btn btn-secondary" style="font-size:12px;padding:4px 10px" onclick="deleteInternalUseRecord(${p.raw.id})">削除</button></td>
             </tr>`;
           }
           const total = p.source === 'docs' ? totalReceivableOfDoc(p.raw) : totalReceivableOf(p.raw);
           const partialNote = total > p.receivable ? '<div style="font-size:11px;color:var(--text2)">元¥' + total.toLocaleString() + '（一部すでに消込済）</div>' : '';
           return `
-          <tr>
-            <td><input type="checkbox" class="pd-check" value="${p.key}" data-amt="${p.receivable}" checked onchange="updateSelectionSummary()"></td>
+          <tr class="row-clickable" onclick="openDetailModal('${p.key}')">
+            <td onclick="event.stopPropagation()"><input type="checkbox" class="pd-check" value="${p.key}" data-amt="${p.receivable}" checked onchange="updateSelectionSummary()"></td>
             <td><span class="src-tag src-${p.source}">${p.label}</span></td>
             <td>${p.date}</td>
             <td>${p.item}</td>
@@ -585,6 +595,63 @@ function renderPendingList(){
   // 絞り込みセレクトの選択状態を保持
   if (filterVal) document.getElementById('pending-account-filter').value = filterVal;
   updateSelectionSummary();
+}
+
+// ===== 取引詳細モーダル =====
+// pendingListの中からkeyでレコードを探し、source（bike/parts/docs/internal）に応じて
+// 表示する項目を出し分ける。台帳一覧（index.html）まで見に行かなくても、ここで
+// 取引の全体像（品目・相手方・金額の内訳など）を確認できるようにする。
+function openDetailModal(key){
+  const p = pendingList.find(x => x.key === key);
+  if (!p) return;
+  const d = p.raw;
+  const rows = [];
+  const push = (label, val) => { if (val !== undefined && val !== null && val !== '') rows.push([label, val]); };
+
+  push('区分', p.label);
+  push('日付', p.date);
+
+  if (p.source === 'bike' || p.source === 'parts') {
+    push('取引区分', d.kubun);
+    push('カテゴリ', d.category);
+    push('品目・特徴', d.feature);
+    push('数量', d.qty);
+    push('相手方氏名・商号', d.name);
+    push('住所', d.address);
+    push('職業', d.job);
+    push('確認方法', d.idMethod);
+    push('確認番号', d.idNo);
+    push('売却金額（総額）', d.price ? '¥' + Number(d.price).toLocaleString() : '');
+    push('プラットフォーム手数料', platformFeeOf(d) ? '¥' + platformFeeOf(d).toLocaleString() : '');
+    push('送料・梱包費', shippingOf(d) ? '¥' + shippingOf(d).toLocaleString() : '');
+    push('残り未収入金', '¥' + p.receivable.toLocaleString());
+    push('入金方法', receiveMethodOf(d));
+    push('入金先口座', p.account);
+    push('備考', d.memo);
+  } else if (p.source === 'docs') {
+    push('品目', d.item);
+    push('相手方', d.name);
+    push('金額（総額）', d.price ? '¥' + Number(d.price).toLocaleString() : '');
+    push('手数料', d.fee ? '¥' + Number(d.fee).toLocaleString() : '');
+    push('送料', d.shipping ? '¥' + Number(d.shipping).toLocaleString() : '');
+    push('残り未収入金', '¥' + p.receivable.toLocaleString());
+    push('入金先口座', p.account);
+    push('備考', d.memo);
+  } else if (p.source === 'internal') {
+    push('内容', d.memo || d.account);
+    push('使途の勘定科目', d.account);
+    push('税区分', d.tax);
+    push('金額', '−¥' + Math.abs(p.receivable).toLocaleString());
+  }
+
+  document.getElementById('detail-title').textContent = p.label + '：' + (p.item || '（品目未入力）');
+  document.getElementById('detail-content').innerHTML = rows.map(([label, val]) =>
+    `<div class="detail-row"><span>${label}</span><span>${String(val).replace(/\n/g,'<br>')}</span></div>`
+  ).join('');
+  document.getElementById('detail-overlay').classList.add('show');
+}
+function closeDetailModal(){
+  document.getElementById('detail-overlay').classList.remove('show');
 }
 
 function togglePayoutSelectAll(cb){
@@ -1021,5 +1088,13 @@ document.getElementById('doc-date').value = todayISO();
 renderDocList();
 renderCashList();
 </script>
+<div class="detail-overlay" id="detail-overlay" onclick="if(event.target===this) closeDetailModal()">
+  <div class="detail-box">
+    <h3 id="detail-title">取引の詳細</h3>
+    <div id="detail-content"></div>
+    <button type="button" class="btn btn-secondary detail-close" onclick="closeDetailModal()">閉じる</button>
+  </div>
+</div>
+
 </body>
 </html>
