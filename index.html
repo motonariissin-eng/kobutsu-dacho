@@ -1129,17 +1129,28 @@ function startPushBatches(data, mergedCount) {
 
 // ===== JSONP送信 =====
 function gasPost(rec, cb) {
-  showLoad(true);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
-  const url = GAS + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
-  fetch(url, { signal: controller.signal })
-    .then(r => r.json())
-    .then(res => { clearTimeout(timer); showLoad(false); cb(res); })
-    .catch(err => {
-      clearTimeout(timer); showLoad(false);
-      toast(err && err.name === 'AbortError' ? 'タイムアウト' : 'GAS接続エラー', 'err');
-    });
+  let retryCount = 0;
+  function attempt() {
+    showLoad(true, retryCount ? ('再試行中...（' + retryCount + '回目）') : undefined);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    const url = GAS + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
+    fetch(url, { signal: controller.signal })
+      .then(r => r.json())
+      .then(res => { clearTimeout(timer); showLoad(false); cb(res); })
+      .catch(err => {
+        clearTimeout(timer);
+        const label = err && err.name === 'AbortError' ? 'タイムアウト' : 'GAS接続エラー';
+        if (retryCount < 2) {
+          retryCount++;
+          setTimeout(attempt, 800);
+        } else {
+          showLoad(false);
+          toast(label + '（' + retryCount + '回再試行しましたが失敗しました）', 'err');
+        }
+      });
+  }
+  attempt();
 }
 
 // ===== GAS全件取得 =====
@@ -1677,7 +1688,7 @@ function fillChannel() {
       rmEl.value = '現金';
       if (noteEl) noteEl.textContent = '';
     } else if (val === 'ヤフオク') {
-      if (noteEl) noteEl.textContent = 'ヤフオクは基本的に口座（落札者からの振込）ですが、現金のこともあるため実際の受け取り方法を選び直してください。手数料は一律¥1,980です';
+      if (noteEl) noteEl.textContent = 'ヤフオクは基本的に口座（落札者からの振込）ですが、現金のこともあるため実際の受け取り方法を選び直してください。振込時は通常、手数料の天引きなしで満額入金されます（別途システム利用料が請求される場合は、実際に請求が来たタイミングで別途記帳してください）';
     } else if (val === 'ジモティ') {
       rmEl.value = '現金';
       if (noteEl) noteEl.textContent = 'ジモティは現金（手渡し）がデフォルトです。あんしん決済で手数料がかかる場合は、下の「プラットフォーム手数料」に金額を入れると自動で「口座」に切り替わります';
@@ -1834,9 +1845,11 @@ const SERVICE_PRESETS = [
 //   freee側で「支出・手数料」として別計上するための金額として保持するのみ。
 const PLATFORM_FEE_PRESETS = [
   { label: 'メルカリ(10%)', rate: 0.10 },
-  { label: 'ジモティあんしん決済(5%)', rate: 0.05 },
-  { label: 'ヤフオク(¥1,980固定)', flat: 1980 }
+  { label: 'ジモティあんしん決済(5%)', rate: 0.05 }
 ];
+// ★注：ヤフオクは個々の振込では手数料が天引きされず満額入金されることをYahoo!ウォレットの明細で確認済み
+//   （振込手数料100〜150円のみが引かれる）。そのためプリセットボタンは廃止。システム利用料が
+//   別途まとめて請求された場合は、その請求のタイミングで支払手数料として別途記帳する。
 // ★注：ヤフオク・ジモティの銀行振込手数料（¥100／¥150）は「振込依頼1回につき」発生するもので、
 //   個々の売却1件ごとにかかるものではない（複数件まとめて1回の振込依頼にできるため）。
 //   よってここ（1件ごとの登録画面）には含めず、統合出金消込ツール（payout.html）側の
