@@ -431,6 +431,7 @@
       <div class="field"><label>期間（開始・任意）</label><input type="date" id="sales-from"></div>
       <div class="field"><label>期間（終了・任意）</label><input type="date" id="sales-to"></div>
     </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">※開始日は前回出力した最終日の翌日を自動セットしています。手動で変更も可能です。</p>
     <div class="btn-group">
       <button class="btn btn-secondary" onclick="previewSalesJournal()">対象データを確認</button>
       <button class="btn btn-primary" onclick="exportSalesJournalCSV()">CSV　売上登録用を出力</button>
@@ -445,6 +446,7 @@
       <div class="field"><label>期間（開始・任意）</label><input type="date" id="purchase-from"></div>
       <div class="field"><label>期間（終了・任意）</label><input type="date" id="purchase-to"></div>
     </div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">※開始日は前回出力した最終日の翌日を自動セットしています。手動で変更も可能です。</p>
     <div class="btn-group">
       <button class="btn btn-secondary" onclick="previewPurchaseJournal()">対象データを確認</button>
       <button class="btn btn-primary" onclick="exportPurchaseJournalCSV()">CSV　仕入登録用を出力</button>
@@ -1759,6 +1761,12 @@ document.addEventListener('DOMContentLoaded', function() {
   buildServiceQuickButtons();
   buildPlatformFeeButtons();
   toggleInCustomFields();
+
+  // 前回「仕入登録用」「売上登録用」CSVを出力した最終日の翌日を、期間（開始）の初期値にする
+  const lastPurchase = localStorage.getItem('kobutu_purchase_last_export_to');
+  if (lastPurchase) document.getElementById('purchase-from').value = addDaysISO(lastPurchase, 1);
+  const lastSales = localStorage.getItem('kobutu_sales_last_export_to');
+  if (lastSales) document.getElementById('sales-from').value = addDaysISO(lastSales, 1);
 });
 
 // ===== フォームクリア =====
@@ -1804,6 +1812,11 @@ function clearOut() {
 }
 
 function todayISO() { return new Date().toISOString().slice(0,10); }
+function addDaysISO(iso, days) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0,10);
+}
 
 // GAS側のDate型セルがJSON化される際に "YYYY-MM-DDT00:00:00.000Z" 形式になることがあるため、
 // 取引日(date)欄をプレーンな "YYYY-MM-DD" に正規化する。
@@ -2437,6 +2450,8 @@ function exportSalesJournalCSV() {
   });
 
   downloadCSV(header, rows, '売上登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
+  const maxDate = data.reduce((m, d) => (d.date > m ? d.date : m), data[0].date);
+  localStorage.setItem('kobutu_sales_last_export_to', maxDate);
   toast(data.length + '件（' + rows.length + '行）のfreee用CSVを出力しました', 'ok');
 }
 
@@ -2521,6 +2536,8 @@ function exportPurchaseJournalCSV() {
   });
 
   downloadCSV(header, rows, '仕入登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
+  const maxDate = data.reduce((m, d) => (d.date > m ? d.date : m), data[0].date);
+  localStorage.setItem('kobutu_purchase_last_export_to', maxDate);
   toast(data.length + '件のfreee用CSVを出力しました', 'ok');
 }
 
