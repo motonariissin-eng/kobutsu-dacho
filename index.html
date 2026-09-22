@@ -2353,14 +2353,17 @@ function downloadCSV(header, rows, filename) {
 }
 
 // ---- CSV：売上登録用 ----
-function getSalesJournalTargets() {
+// 出力済みのレコードにはmemoへ[売上仕訳済:1]タグを付け、以後の対象から除外する。
+function filterSalesJournalTargets(all) {
   const from = v('sales-from');
   const to = v('sales-to');
-  return load()
+  return all
     .filter(d => isOutKubun(d.kubun) && salesAmount(d) > 0)
+    .filter(d => !parseMemoTag(d.memo, '売上仕訳済'))
     .filter(d => (!from || d.date >= from) && (!to || d.date <= to))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
 }
+function getSalesJournalTargets() { return filterSalesJournalTargets(load()); }
 
 function previewSalesJournal() {
   const data = getSalesJournalTargets();
@@ -2417,7 +2420,8 @@ function fmtDateSlashFull(iso) {
 }
 
 function exportSalesJournalCSV() {
-  const data = getSalesJournalTargets();
+  const allData = load();
+  const data = filterSalesJournalTargets(allData);
   if (!data.length) { toast('対象データがありません', 'err'); return; }
 
   // freee「仕訳インポート（他社会計ソフトインポート＝振替伝票）」用の列形式。
@@ -2449,21 +2453,28 @@ function exportSalesJournalCSV() {
     denpyoSeq++;
   });
 
+  data.forEach(d => { d.memo = setMemoTag(d.memo, '売上仕訳済', '1'); });
+  save(allData);
+
   downloadCSV(header, rows, '売上登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
   const maxDate = data.reduce((m, d) => (d.date > m ? d.date : m), data[0].date);
   localStorage.setItem('kobutu_sales_last_export_to', maxDate);
-  toast(data.length + '件（' + rows.length + '行）のfreee用CSVを出力しました', 'ok');
+  toast(data.length + '件（' + rows.length + '行）のfreee用CSVを出力しました（次回以降は対象から除外されます）', 'ok');
+  previewSalesJournal();
 }
 
 // ---- CSV：仕入登録用 ----
-function getPurchaseJournalTargets() {
+// 出力済みのレコードにはmemoへ[仕入仕訳済:1]タグを付け、以後の対象から除外する。
+function filterPurchaseJournalTargets(all) {
   const from = v('purchase-from');
   const to = v('purchase-to');
-  return load()
+  return all
     .filter(d => isInKubun(d.kubun) && (parseInt(d.price) || 0) > 0)
+    .filter(d => !parseMemoTag(d.memo, '仕入仕訳済'))
     .filter(d => (!from || d.date >= from) && (!to || d.date <= to))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
 }
+function getPurchaseJournalTargets() { return filterPurchaseJournalTargets(load()); }
 
 function previewPurchaseJournal() {
   const all = getPurchaseJournalTargets();
@@ -2512,7 +2523,8 @@ function previewPurchaseJournal() {
 }
 
 function exportPurchaseJournalCSV() {
-  const all = getPurchaseJournalTargets();
+  const allData = load();
+  const all = filterPurchaseJournalTargets(allData);
   const data = all.filter(d => purchasePayMethodOf(d) !== '未収入金');
   if (!data.length) {
     toast('対象データがありません（メルカリ残高払いのみの場合は統合出金消込ツールをご利用ください）', 'err');
@@ -2535,10 +2547,14 @@ function exportPurchaseJournalCSV() {
     denpyoSeq++;
   });
 
+  data.forEach(d => { d.memo = setMemoTag(d.memo, '仕入仕訳済', '1'); });
+  save(allData);
+
   downloadCSV(header, rows, '仕入登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
   const maxDate = data.reduce((m, d) => (d.date > m ? d.date : m), data[0].date);
   localStorage.setItem('kobutu_purchase_last_export_to', maxDate);
-  toast(data.length + '件のfreee用CSVを出力しました', 'ok');
+  toast(data.length + '件のfreee用CSVを出力しました（次回以降は対象から除外されます）', 'ok');
+  previewPurchaseJournal();
 }
 
 // ---- CSV：台帳一覧の詳細モーダルから、その1件だけをfreee用に出力 ----
@@ -2565,6 +2581,9 @@ function exportSingleJournalCSV() {
     if (fee > 0) rows.push(['[明細行]', dateSlash, no, '支払手数料', '課対仕入10%', fee, account, '', fee, d.name || '', 'プラットフォーム手数料：' + item]);
     if (ship > 0) rows.push(['[明細行]', dateSlash, no, '荷造運賃', '課対仕入10%', ship, account, '', ship, d.name || '', '送料・梱包費：' + item]);
     downloadCSV(header, rows, '売上登録_freee用_払出' + (d.id || '') + '_' + todayISO().replace(/-/g, '') + '.csv');
+    const allS = load();
+    const recS = allS.find(r => String(r.uid) === String(currentUID));
+    if (recS) { recS.memo = setMemoTag(recS.memo, '売上仕訳済', '1'); save(allS); }
     toast('払出-' + (d.id || '') + ' のfreee用CSVを出力しました', 'ok');
   } else if (isInKubun(d.kubun)) {
     const price = parseInt(d.price) || 0;
@@ -2580,6 +2599,9 @@ function exportSingleJournalCSV() {
     const payMethod = purchasePayMethodOf(d);
     const rows = [['[明細行]', dateSlash, no, account, '課対仕入10%', price, payMethod, '', price, d.name || '', '仕入：' + item]];
     downloadCSV(header, rows, '仕入登録_freee用_受入' + (d.id || '') + '_' + todayISO().replace(/-/g, '') + '.csv');
+    const allP = load();
+    const recP = allP.find(r => String(r.uid) === String(currentUID));
+    if (recP) { recP.memo = setMemoTag(recP.memo, '仕入仕訳済', '1'); save(allP); }
     toast('受入-' + (d.id || '') + ' のfreee用CSVを出力しました', 'ok');
   } else {
     toast('この区分はfreee出力に対応していません', 'err');
