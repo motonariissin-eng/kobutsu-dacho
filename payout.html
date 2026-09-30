@@ -406,9 +406,25 @@ function saveInternal(d){ localStorage.setItem(LS_INTERNAL, JSON.stringify(d)); 
 
 // ===== 出金消込：GASから取得 =====
 function fetchGAS(url){
-  return fetch(url).then(r=>r.json()).then(res=>{
+  return fetch(url).then(r=>r.text()).then(txt=>{
+    let res;
+    try { res = JSON.parse(txt); }
+    catch(e){
+      // JSONでなくHTMLが返ってきた場合（GASのエラー画面・ログイン画面・権限エラーなど）
+      const plain = txt.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi,'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,160);
+      throw new Error('GASがJSONではなくHTMLを返しました：' + (plain || '(空)'));
+    }
     if (res && Array.isArray(res.entries)) return res.entries;
+    if (res && res.error) throw new Error('GASエラー：' + res.error);
     throw new Error('想定外の応答形式');
+  });
+}
+// since付きで失敗したら、sinceなしで1回だけ再試行する（GAS側のsince処理が原因の切り分け＆救済）
+function fetchGASWithFallback(base, since){
+  if (!since) return fetchGAS(base);
+  return fetchGAS(base + since).catch(err=>{
+    console.warn('since付き取得に失敗、sinceなしで再試行:', err.message);
+    return fetchGAS(base).then(v=>{ v._fallback = true; return v; });
   });
 }
 
@@ -429,7 +445,7 @@ function refreshPending(){
   statusEl.textContent = '取得中...';
   showLoad(true);
   const since = getSinceParam();
-  Promise.allSettled([fetchGAS(GAS_BIKE + since), fetchGAS(GAS_PARTS + since)]).then(([bikeRes, partsRes])=>{
+  Promise.allSettled([fetchGASWithFallback(GAS_BIKE, since), fetchGASWithFallback(GAS_PARTS, since)]).then(([bikeRes, partsRes])=>{
     showLoad(false);
     const errors = [];
     if (bikeRes.status === 'fulfilled') bikeEntries = bikeRes.value;
