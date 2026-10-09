@@ -575,10 +575,13 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 function isInKubun(k) { return k && k.includes('受入'); }
 function isOutKubun(k) { return k && k.includes('払出'); }
 
+// GAS上の最大番号（新規登録の直前に取得）。ローカルより大きければ採番の下限になる
+let remoteMaxId = { in: 0, out: 0 };
 function nextIdForKubun(kindFilterFn) {
   const data = load();
   const nums = data.filter(d => kindFilterFn(d.kubun)).map(d => parseInt(d.id||0)).filter(n=>!isNaN(n));
-  return nums.length ? Math.max(...nums)+1 : 1;
+  const remote = (kindFilterFn === isInKubun ? remoteMaxId.in : remoteMaxId.out) || 0;
+  return Math.max(nums.length ? Math.max(...nums) : 0, remote) + 1;
 }
 function nextInId() { return nextIdForKubun(isInKubun); }
 function nextOutId() { return nextIdForKubun(isOutKubun); }
@@ -682,7 +685,7 @@ function tab(id, btn) {
 // ===== 受入保存 =====
 // 実際のGASスキーマ(FIELDS): uid,id,date,kubun,category,qty,feature,price,age,idMethod,idNo,name,address,job,memo,sold,createdAt,linkedInId,totalPrice,serviceFee
 // （platformFee・shippingはGAS側に列がないため保存されず、memo内の[手数料:xxx][送料:xxx]タグとしてのみ記録される）
-function submitIn() {
+function submitInCore() {
   const isEditing = editMode === 'in';
   const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
   const nextIn = (isEditing && existing) ? existing.id : nextInId();
@@ -751,7 +754,7 @@ function submitIn() {
 
 // ===== 払出保存 =====
 // linkedInId・合計金額・作業費明細は memo に埋め込んで記録する（GASに専用列がないため）
-function submitOut() {
+function submitOutCore() {
   const isEditing = editMode === 'out';
   const existing = isEditing ? load().find(r => String(r.uid) === String(editUID)) : null;
   const nextOut = (isEditing && existing) ? existing.id : nextOutId();
@@ -1131,6 +1134,7 @@ function startPushBatches(data, mergedCount) {
 
 // ===== JSONP送信 =====
 function gasPost(rec, cb) {
+  gasPending++;
   let retryCount = 0;
   function attempt() {
     showLoad(true, retryCount ? ('再試行中...（' + retryCount + '回目）') : undefined);
@@ -1139,7 +1143,7 @@ function gasPost(rec, cb) {
     const url = GAS + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
     fetch(url, { signal: controller.signal })
       .then(r => r.json())
-      .then(res => { clearTimeout(timer); showLoad(false); cb(res); })
+      .then(res => { clearTimeout(timer); gasPending--; showLoad(false); cb(res); })
       .catch(err => {
         clearTimeout(timer);
         const label = err && err.name === 'AbortError' ? 'タイムアウト' : 'GAS接続エラー';
@@ -1147,6 +1151,7 @@ function gasPost(rec, cb) {
           retryCount++;
           setTimeout(attempt, 800);
         } else {
+          gasPending--;
           showLoad(false);
           toast(label + '（' + retryCount + '回再試行しましたが失敗しました）', 'err');
         }
@@ -1154,6 +1159,47 @@ function gasPost(rec, cb) {
   }
   attempt();
 }
+
+// ===== 二重送信ガードと、GAS最大番号を見た採番 =====
+// gasPending：送信中のgasPost件数。保存処理中に登録ボタンを押し直しても二重登録しない。
+let gasPending = 0;
+let submitPreparing = false;
+
+// 新規登録の直前にGAS上の最大の受入番号・払出番号を取得し、ローカルより大きければ採番の下限にする。
+// 複数端末や同期前のブラウザで登録しても、同じ番号が別データに振られるのを防ぐ。
+// GASに接続できない場合は、従来どおりローカルの最大値+1で続行する。
+function refreshRemoteIdFloor(done) {
+  showLoad(true, 'GASの最新番号を確認中...');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  fetch(GAS, { signal: controller.signal })
+    .then(r => r.json())
+    .then(res => {
+      clearTimeout(timer);
+      if (res && Array.isArray(res.entries)) {
+        let mi = 0, mo = 0;
+        res.entries.forEach(r => {
+          const n = parseInt(r.id, 10);
+          if (isNaN(n)) return;
+          if (isInKubun(r.kubun)) mi = Math.max(mi, n);
+          else if (isOutKubun(r.kubun)) mo = Math.max(mo, n);
+        });
+        remoteMaxId = { in: mi, out: mo };
+        updateNextIds();
+      }
+    })
+    .catch(() => { clearTimeout(timer); })
+    .finally(() => { showLoad(false); done(); });
+}
+
+function guardedSubmit(mode, core) {
+  if (gasPending > 0 || submitPreparing) { toast('保存処理中です。少しお待ちください', 'err'); return; }
+  if (editMode === mode) { core(); return; } // 編集は番号を変えないのでそのまま実行
+  submitPreparing = true;
+  refreshRemoteIdFloor(function() { submitPreparing = false; core(); });
+}
+function submitIn()  { guardedSubmit('in',  submitInCore); }
+function submitOut() { guardedSubmit('out', submitOutCore); }
 
 // ===== GAS全件取得 =====
 // 実際のGASは action='save' 以外なら無条件で全件返す（action=getAll という概念はない）
@@ -2049,6 +2095,26 @@ function checkDataBreakdown() {
   } else {
     out += '  重複なし\n';
     document.getElementById('dupCleanupBtnWrap').style.display = 'none';
+  }
+
+  const idGroups = {};
+  data.forEach(r => {
+    const kb = isInKubun(r.kubun) ? '受入' : isOutKubun(r.kubun) ? '払出' : null;
+    if (!kb) return;
+    const key = kb + '-' + r.id;
+    (idGroups[key] = idGroups[key] || []).push(r);
+  });
+  const dupIds = Object.entries(idGroups).filter(([, a]) => a.length > 1);
+  out += '\n【ID重複（区分と番号が同じで別データ）】\n';
+  if (dupIds.length) {
+    out += '  重複あり: ' + dupIds.length + '種類\n';
+    dupIds.slice(0, 15).forEach(([k, a]) => {
+      out += '    ' + k + ': ' + a.map(r => (parseFeature(r.feature).frame || '車台なし') + ' ¥' + (r.price || 0) + ' uid=' + r.uid).join(' / ') + '\n';
+    });
+    if (dupIds.length > 15) out += '    ...他' + (dupIds.length - 15) + '種類\n';
+    out += '  ※台帳一覧で内容を確認し、不要な方を削除してください。\n';
+  } else {
+    out += '  重複なし\n';
   }
 
   const blanks = data.filter(r => !isInKubun(r.kubun) && !isOutKubun(r.kubun));
