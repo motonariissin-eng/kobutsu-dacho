@@ -413,6 +413,7 @@
     <div class="btn-group">
       <button class="btn btn-secondary" onclick="previewSalesJournal()">対象データを確認</button>
       <button class="btn btn-primary" onclick="exportSalesJournalCSV()">CSV　売上登録用を出力</button>
+      <button class="btn btn-secondary" onclick="markJournalExported('sales')">期間内を出力済みにする（CSVなし）</button>
     </div>
     <div id="sales-journal-preview" style="margin-top:12px"></div>
   </div>
@@ -427,6 +428,7 @@
     <div class="btn-group">
       <button class="btn btn-secondary" onclick="previewPurchaseJournal()">対象データを確認</button>
       <button class="btn btn-primary" onclick="exportPurchaseJournalCSV()">CSV　仕入登録用を出力</button>
+      <button class="btn btn-secondary" onclick="markJournalExported('purchase')">期間内を出力済みにする（CSVなし）</button>
     </div>
     <div id="purchase-journal-preview" style="margin-top:12px"></div>
   </div>
@@ -958,6 +960,12 @@ function mergePayoutTagsFromGAS(localData, gasData) {
         changed = true;
       }
     });
+    // 出力済みフラグは「GAS側にあれば取り込む」だけにする（ローカルにあるフラグは消さない）。
+    // 消すと、GAS保存に失敗していた分が上書き送信で失われ、再出力の対象に戻ってしまうため。
+    ['売上仕訳済', '仕入仕訳済'].forEach(tag => {
+      const gv = parseMemoTag(gasRec.memo, tag);
+      if (gv && !parseMemoTag(rec.memo, tag)) { rec.memo = setMemoTag(rec.memo, tag, gv); changed = true; }
+    });
     if (changed) mergedCount++;
   });
   return mergedCount;
@@ -1164,6 +1172,7 @@ function syncFromGAS() {
           const gasData = res.entries;
           const local = load();
           const localUIDs = new Set(local.map(r => String(r.uid)));
+          const localByUid = new Map(local.map(r => [String(r.uid), r]));
           let added = 0;
           const errors = [];
           gasData.forEach((row, i) => {
@@ -1175,6 +1184,13 @@ function syncFromGAS() {
                 parseMetaTags(row); // memo内の[対応受入:xx]等を復元
                 local.push(row); added++;
                 localUIDs.add(u); // GAS側に同一uidの行が複数あっても二重追加しない
+              } else {
+                // 既にローカルにある行：GAS側にだけ出力済みフラグがあれば取り込む（他の端末で出力した分）
+                const lr = localByUid.get(u);
+                if (lr) ['売上仕訳済', '仕入仕訳済'].forEach(tag => {
+                  const gv = parseMemoTag(row.memo, tag);
+                  if (gv && !parseMemoTag(lr.memo, tag)) lr.memo = setMemoTag(lr.memo, tag, gv);
+                });
               }
             } catch (e) {
               errors.push('行' + i + '(uid=' + row.uid + '): ' + e.message);
@@ -1675,6 +1691,11 @@ function clearOut() {
 }
 
 function todayISO() { return new Date().toISOString().slice(0,10); }
+function addDaysISO(iso, days) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0,10);
+}
 
 // GAS側のDate型セルがJSON化される際に "YYYY-MM-DDT00:00:00.000Z" 形式になることがあるため、
 // 取引日(date)欄をプレーンな "YYYY-MM-DD" に正規化する。
@@ -2274,6 +2295,73 @@ function downloadCSV(header, rows, filename) {
   a.click();
 }
 
+// ===== 出力済みフラグ（[売上仕訳済:1]／[仕入仕訳済:1]）をGASにも保存する =====
+// フラグはmemoタグとしてレコードに付く。ローカルだけに付けると、データ破損→「GASから全件取得」で
+// ローカルを作り直した際にフラグが失われ、過去分が再び出力対象に出てしまう。
+// そのため出力のたびに、フラグを付けたレコードをGAS（action=save＝uidで上書き）へ送って残す。
+function pushFlagsToGAS(recs) {
+  return new Promise(resolve => {
+    if (!recs.length) { resolve({ ok: 0, ng: 0 }); return; }
+    let idx = 0, ok = 0, ng = 0, active = 0, finished = false;
+    const CONC = 3;
+    function sendOne(rec, attempt) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      return fetch(GAS + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec)), { signal: controller.signal })
+        .then(r => r.json())
+        .then(res => { clearTimeout(timer); if (!(res && res.status === 'ok')) throw new Error('GAS応答NG'); })
+        .catch(err => { clearTimeout(timer); if (attempt < 1) return sendOne(rec, attempt + 1); throw err; });
+    }
+    function next() {
+      if (idx >= recs.length) {
+        if (active === 0 && !finished) { finished = true; showLoad(false); resolve({ ok, ng }); }
+        return;
+      }
+      const rec = recs[idx++];
+      active++;
+      sendOne(rec, 0).then(() => { ok++; }).catch(() => { ng++; }).finally(() => {
+        active--;
+        showLoad(true, 'GASへ出力済み記録を保存中... (' + (ok + ng) + '/' + recs.length + ')');
+        next();
+      });
+    }
+    showLoad(true, 'GASへ出力済み記録を保存中... (0/' + recs.length + ')');
+    for (let i = 0; i < CONC && i < recs.length; i++) next();
+  });
+}
+function reportFlagPush(r) {
+  if (r.ng > 0) {
+    toast('CSVは出力済みですが、出力済み記録のGAS保存に' + r.ng + '件失敗しました（通信環境を確認し、「ローカル全件をGASに上書き送信」で反映してください）', 'err');
+  } else if (r.ok > 0) {
+    toast('出力済み記録をGASにも保存しました（' + r.ok + '件）', 'ok');
+  }
+}
+
+// 過去に出力済みの分を、CSVを出さずに「出力済み」にする（期間内の未出力分が対象）。
+// データ復旧後など、すでにfreeeへ取り込み済みの分が再び対象に出てしまう時に使う。
+function markJournalExported(kind) {
+  const isSales = kind === 'sales';
+  const to = v(isSales ? 'sales-to' : 'purchase-to');
+  if (!to) { toast('「期間（終了）」を入力してください（その日までを出力済みにします）', 'err'); return; }
+  const allData = load();
+  let targets = isSales ? filterSalesJournalTargets(allData) : filterPurchaseJournalTargets(allData);
+  if (!isSales) targets = targets.filter(d => purchasePayMethodOf(d) !== '未収入金'); // メルカリ残高払いはこのCSVの対象外なので触らない
+  if (!targets.length) { toast('対象データがありません', 'err'); return; }
+  const label = isSales ? '売上' : '仕入';
+  if (!confirm(label + '登録用：期間内の未出力 ' + targets.length + '件を、CSVを出さずに「出力済み」にします。\n（freeeに取り込み済みの分に対して使ってください）\n\nよろしいですか？')) return;
+  const tag = isSales ? '売上仕訳済' : '仕入仕訳済';
+  targets.forEach(d => { d.memo = setMemoTag(d.memo, tag, '1'); });
+  save(allData);
+  localStorage.setItem(isSales ? 'kobutu_sales_last_export_to' : 'kobutu_purchase_last_export_to', to);
+  const fromEl = document.getElementById(isSales ? 'sales-from' : 'purchase-from');
+  if (fromEl) fromEl.value = addDaysISO(to, 1);
+  if (isSales) previewSalesJournal(); else previewPurchaseJournal();
+  pushFlagsToGAS(targets).then(r => {
+    if (r.ng > 0) toast(targets.length + '件を出力済みにしましたが、GAS保存に' + r.ng + '件失敗しました', 'err');
+    else toast(targets.length + '件を出力済みにし、GASにも保存しました', 'ok');
+  });
+}
+
 // ---- CSV：売上登録用 ----
 // 出力済みのレコードにはmemoへ[売上仕訳済:1]タグを付け、以後の対象から除外する。
 function filterSalesJournalTargets(all) {
@@ -2368,6 +2456,7 @@ function exportSalesJournalCSV() {
 
   data.forEach(d => { d.memo = setMemoTag(d.memo, '売上仕訳済', '1'); });
   save(allData);
+  pushFlagsToGAS(data).then(reportFlagPush); // フラグをGASにも保存（ローカル再作成後も消えないように）
 
   downloadCSV(header, rows, '売上登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
   toast(data.length + '件（' + rows.length + '行）のfreee用CSVを出力しました（次回以降は対象から除外されます）', 'ok');
@@ -2459,6 +2548,7 @@ function exportPurchaseJournalCSV() {
 
   data.forEach(d => { d.memo = setMemoTag(d.memo, '仕入仕訳済', '1'); });
   save(allData);
+  pushFlagsToGAS(data).then(reportFlagPush); // フラグをGASにも保存（ローカル再作成後も消えないように）
 
   downloadCSV(header, rows, '仕入登録_freee用_' + todayISO().replace(/-/g, '') + '.csv');
   toast(data.length + '件のfreee用CSVを出力しました（次回以降は対象から除外されます）', 'ok');
