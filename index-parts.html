@@ -474,20 +474,11 @@
 
   <div class="card">
     <h2>JSONバックアップ</h2>
-    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">ID整理など大きな操作の前に、現在のローカルデータをファイルに保存しておくことをおすすめします。</p>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">重複解消や上書き送信など大きな操作の前に、現在のローカルデータをファイルに保存しておくことをおすすめします。</p>
     <div class="btn-group">
       <button class="btn" onclick="exportBackupJSON()">現在のデータをバックアップ保存</button>
       <button class="btn" onclick="document.getElementById('restoreFile').click()">バックアップから復元</button>
       <input type="file" id="restoreFile" accept=".json" style="display:none" onchange="importBackupJSON(this)">
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>ID整理（再採番）</h2>
-    <p style="font-size:12px;color:var(--text2);margin-bottom:8px">過去データを取引年月日の古い順に並べ直し、受入・払出それぞれを1からの連番に振り直します。払出の「対応受入番号」やメモ内のタグも自動で追従します。</p>
-    <p style="font-size:12px;color:#c88;margin-bottom:8px">注意：ローカルのみの変更です。GAS側にも反映する場合は、この後に下の「ローカル全件をGASに上書き送信」を実行してください。</p>
-    <div class="btn-group">
-      <button class="btn btn-danger" onclick="renumberIds()">受入・払出のIDを1から振り直す</button>
     </div>
   </div>
 
@@ -2568,40 +2559,6 @@ function exportCSV(type) {
   a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
   a.download = '古物台帳_'+type+'_'+todayISO().replace(/-/g,'')+'.csv';
   a.click();
-}
-
-// ===== ID整理：受入・払出を取引年月日の古い順に1から振り直す =====
-function renumberIds() {
-  const data = load();
-  if (!data.length) { toast('データなし', 'err'); return; }
-  if (!confirm('受入・払出のIDを取引年月日の古い順に1から振り直します。\nローカルのみの変更です。よろしいですか？')) return;
-
-  const sortKey = r => {
-    const n = parseInt(r.id, 10);
-    return (r.date || '') + 'T' + String(isNaN(n) ? 999999 : n).padStart(6, '0');
-  };
-
-  const ins = data.filter(r => isInKubun(r.kubun)).sort((a,b) => sortKey(a) < sortKey(b) ? -1 : 1);
-  const outs = data.filter(r => isOutKubun(r.kubun)).sort((a,b) => sortKey(a) < sortKey(b) ? -1 : 1);
-  const others = data.filter(r => !isInKubun(r.kubun) && !isOutKubun(r.kubun));
-
-  const oldToNewIn = {};
-  ins.forEach((r, i) => { oldToNewIn[String(r.id)] = i + 1; r.id = i + 1; });
-  outs.forEach((r, i) => {
-    r.id = i + 1;
-    if (r.linkedInId && oldToNewIn[String(r.linkedInId)] !== undefined) {
-      const newLinked = oldToNewIn[String(r.linkedInId)];
-      if (r.memo) {
-        r.memo = r.memo.replace(/\[対応受入:[^\]]+\]/, '[対応受入:' + newLinked + ']');
-      }
-      r.linkedInId = String(newLinked);
-    }
-  });
-
-  save([...ins, ...outs, ...others]);
-  updateNextIds(); updateHeaderCount(); updateStats();
-  if (document.getElementById('t-list').classList.contains('active')) renderList();
-  toast('ID整理が完了しました（受入' + ins.length + '件・払出' + outs.length + '件）', 'ok');
 }
 
 function clearLocal() {
