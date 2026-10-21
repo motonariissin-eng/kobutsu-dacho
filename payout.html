@@ -449,7 +449,7 @@ function refreshPending(){
     showLoad(false);
     const errors = [];
     if (bikeRes.status === 'fulfilled') bikeEntries = bikeRes.value;
-    else { bikeEntries = []; errors.push('バイク台帳の取得に失敗：' + bikeRes.reason.message); }
+    else { bikeEntries = []; errors.push('バイク台帳の取得に失敗：' + bikeRes.reason.message + '［使用中のバイクURL: …' + GAS_BIKE.slice(-24) + '］'); }
     if (partsRes.status === 'fulfilled') partsEntries = partsRes.value;
     else { partsEntries = []; errors.push('小物台帳の取得に失敗：' + partsRes.reason.message); }
     statusEl.innerHTML = errors.length
@@ -602,7 +602,12 @@ function renderPendingList(){
             <td>${p.date}</td>
             <td>${p.item}</td>
             <td>${p.account}</td>
-            <td class="num">¥${p.receivable.toLocaleString()}${partialNote}</td>
+            <td class="num" onclick="event.stopPropagation()">
+              ¥${p.receivable.toLocaleString()}${partialNote}
+              <div style="font-size:11px;color:var(--text2);margin-top:3px">今回消込額
+                <input type="text" inputmode="numeric" class="pd-amt" data-key="${p.key}" value="${p.receivable}" oninput="updateSelectionSummary()" style="width:90px;padding:3px 6px;font-size:12px;text-align:right;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text)">
+              </div>
+            </td>
             <td></td>
           </tr>`;
         }).join('')}
@@ -706,9 +711,20 @@ function autofillWithdrawalFee(){
     delete feeEl.dataset.auto;
   }
 }
+// 今回消込する金額：行ごとの入力欄（.pd-amt）の値。0〜残りの未収入金の範囲に収める。
+// 入力欄のない行（内部消化のマイナス取引）は残額そのまま。
+function payAmountOfKey(key, full){
+  const el = Array.from(document.querySelectorAll('.pd-amt')).find(x => x.dataset.key === key);
+  if (!el) return full;
+  const n = parseInt(String(el.value).replace(/[^0-9]/g,''), 10);
+  if (isNaN(n)) return 0;
+  return Math.max(0, Math.min(n, full));
+}
 function getSelectedPayoutTotal(){
   let sum = 0;
-  document.querySelectorAll('.pd-check:checked').forEach(el => sum += parseInt(el.dataset.amt) || 0);
+  document.querySelectorAll('.pd-check:checked').forEach(el => {
+    sum += payAmountOfKey(el.value, parseInt(el.dataset.amt) || 0);
+  });
   return sum;
 }
 function updatePayoutDiff(){
@@ -739,10 +755,15 @@ function exportPayoutJournalCSV(){
   if (!payoutDate || !bank){ msgBox('payout-msg', '出金日・銀行入金額を入力してください', 'err'); return; }
 
   const selectedKeys = new Set(checks.map(el => el.value));
-  const selectedItems = pendingList.filter(p => selectedKeys.has(p.key));
+  // 今回消込する金額（payAmt）を各案件に持たせる。0円の案件は今回の対象から外す。
+  const selectedItems = pendingList.filter(p => selectedKeys.has(p.key)).map(p => {
+    const payAmt = p.source === 'internal' ? p.receivable : payAmountOfKey(p.key, p.receivable);
+    return Object.assign({}, p, { payAmt });
+  }).filter(p => p.source === 'internal' || p.payAmt > 0);
+  if (!selectedItems.length){ msgBox('payout-msg', '消込額が0円です。金額を入力してください', 'err'); return; }
   const salesItems = selectedItems.filter(p => p.source !== 'internal');
   const internalItems = selectedItems.filter(p => p.source === 'internal');
-  const receivableTotal = selectedItems.reduce((s,p)=>s+p.receivable, 0); // 内部消化分（マイナス）が自動的に差し引かれた「銀行に入るはずの金額」
+  const receivableTotal = selectedItems.reduce((s,p)=>s+p.payAmt, 0); // 今回消込する金額の合計（内部消化のマイナス分は差し引き済み）
 
   // 選んだ口座と、実際にその案件が入金されるはずの口座が食い違っていないか確認
   // （例：メルカリ＝埼玉縣信用金庫のはずの案件が、ゆうちょ銀行の振込に混ざって選ばれている等）
@@ -798,14 +819,23 @@ function exportPayoutJournalCSV(){
   const writebacks = [];
   const docsAll = loadDocs();
   salesItems.forEach(p => {
+    const remain = p.receivable - p.payAmt; // 今回消込しなかった残り（0なら全額消込）
     if (p.source === 'docs'){
       const rec = docsAll.find(d => String(d.id) === String(p.raw.id));
-      if (rec){ rec.payoutDone = true; rec.payoutDate = payoutDate; rec.payoutMethod = '銀行'; rec.payoutAccount = ''; }
+      if (rec){
+        if (remain > 0){ rec.payoutBalance = remain; } // 一部消込：出金済にせず残高だけ更新
+        else { rec.payoutDone = true; rec.payoutDate = payoutDate; rec.payoutMethod = '銀行'; rec.payoutAccount = ''; rec.payoutBalance = null; }
+      }
     } else {
       const rec = Object.assign({}, p.raw);
-      rec.memo = setMemoTag(rec.memo, '出金済', '1');
-      rec.memo = setMemoTag(rec.memo, '出金日', payoutDate);
-      rec.memo = setMemoTag(rec.memo, '出金方法', '銀行');
+      if (remain > 0){
+        rec.memo = setMemoTag(rec.memo, '残高', String(remain)); // 一部消込：出金済にせず残高タグを書く
+      } else {
+        rec.memo = setMemoTag(rec.memo, '残高', null);
+        rec.memo = setMemoTag(rec.memo, '出金済', '1');
+        rec.memo = setMemoTag(rec.memo, '出金日', payoutDate);
+        rec.memo = setMemoTag(rec.memo, '出金方法', '銀行');
+      }
       const url = (p.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
       writebacks.push(fetch(url).then(r=>r.json()));
     }
