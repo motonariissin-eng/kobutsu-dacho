@@ -161,6 +161,9 @@
         <option value="ignore">仕訳には含めず、そのまま無視する（非推奨・借貸不一致のまま出力）</option>
       </select>
     </div>
+    <label style="font-size:12px;color:var(--text2);display:flex;align-items:flex-start;gap:6px;margin-top:8px">
+      <input type="checkbox" id="pd-nocsv" style="margin-top:2px"> CSVは出力せず、台帳の「出金済み」の印だけ更新する（すでにfreeeへ取り込み済みのときだけチェック）
+    </label>
     <div class="btn-group">
       <button class="btn btn-primary" onclick="exportPayoutJournalCSV()">CSVを出力して出金済にする</button>
     </div>
@@ -812,11 +815,14 @@ function exportPayoutJournalCSV(){
     rows.push(['[明細行]', dateI, noI, rec.account, rec.tax === '対象外' ? '' : rec.tax, rec.amount, '未収入金', '', rec.amount, rec.memo]);
   });
 
-  downloadCSV(header, rows, '統合出金登録_freee用_' + payoutDate.replace(/-/g,'') + '.csv');
+  // 「CSVは出さず、台帳の印だけ更新する」にチェックがある場合は、CSVを出力しない
+  // （すでにfreeeへ取り込み済みで、台帳側の出金済みの印だけを付け直したいとき用）
+  const noCsv = !!document.getElementById('pd-nocsv')?.checked;
+  if (!noCsv) downloadCSV(header, rows, '統合出金登録_freee用_' + payoutDate.replace(/-/g,'') + '.csv');
 
   // 出金済への書き戻し
   showLoad(true);
-  const writebacks = [];
+  const writebacks = []; // 台帳（GAS）へ保存する案件：{ p, url, expect }
   const docsAll = loadDocs();
   salesItems.forEach(p => {
     const remain = p.receivable - p.payAmt; // 今回消込しなかった残り（0なら全額消込）
@@ -828,6 +834,7 @@ function exportPayoutJournalCSV(){
       }
     } else {
       const rec = Object.assign({}, p.raw);
+      const expect = remain > 0 ? '[残高:' + remain + ']' : '[出金済:1]'; // 保存後に台帳でこの印を確認する
       if (remain > 0){
         rec.memo = setMemoTag(rec.memo, '残高', String(remain)); // 一部消込：出金済にせず残高タグを書く
       } else {
@@ -837,7 +844,7 @@ function exportPayoutJournalCSV(){
         rec.memo = setMemoTag(rec.memo, '出金方法', '銀行');
       }
       const url = (p.source === 'bike' ? GAS_BIKE : GAS_PARTS) + '?action=save&data=' + encodeURIComponent(JSON.stringify(rec));
-      writebacks.push(fetch(url).then(r=>r.json()));
+      writebacks.push({ p, url, expect });
     }
   });
   saveDocs(docsAll);
@@ -846,16 +853,67 @@ function exportPayoutJournalCSV(){
     saveInternal(loadInternal().filter(d => !internalIds.has(d.id)));
   }
 
-  Promise.allSettled(writebacks).then(results => {
+  writeBackAndVerify(writebacks).then(results => {
     showLoad(false);
-    const failed = results.filter(r => r.status === 'rejected' || (r.value && r.value.status !== 'ok')).length;
-    if (failed){
-      msgBox('payout-msg', 'CSVは出力しましたが、GAS側への反映が' + failed + '件失敗しました。「最新の状態を取得」で再確認してください。', 'err');
+    const bad = results.filter(r => r.resp !== 'ok' || r.verified === false);
+    const csvNote = noCsv ? '（CSVは出力していません）' : '（CSVを出力しました）';
+    const box = document.getElementById('payout-msg');
+    if (bad.length){
+      // 失敗は消えない表示にして、案件ごとに原因を出す
+      box.innerHTML = '<div class="msg err"><strong>台帳への反映に失敗した案件が' + bad.length + '件あります。</strong>' + csvNote +
+        '<br>もう一度CSVを出力しないでください（仕訳が二重になります）。この画面の内容を教えてください。<ul style="margin:6px 0 0 18px">' +
+        bad.map(r => '<li>' + escHtml(r.t.p.item) + '：保存の応答＝' + escHtml(r.resp) +
+          '／台帳の確認＝' + (r.verified === false ? '印が付いていません（台帳に同じ案件が' + (r.count||0) + '行）' : '確認できませんでした') + '</li>').join('') +
+        '</ul></div>';
     } else {
-      msgBox('payout-msg', selectedItems.length + '件を出金済にし、CSVを出力しました', 'ok');
+      const unverified = results.filter(r => r.verified === null).length;
+      box.innerHTML = '<div class="msg ok">' + selectedItems.length + '件を消込しました' + csvNote +
+        (writebacks.length && !unverified ? '。台帳への反映も確認しました。' : '。') + '</div>';
     }
     refreshPending();
   });
+}
+
+function escHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+// 台帳へ1件ずつ順番に保存し、保存後に台帳を読み直して印が付いているか確かめる。
+// 戻り値：案件ごとの { t（案件）, resp（保存の応答。'ok'なら成功）, verified（true/false/null=確認不能）, count（台帳内の同一uid行数） }
+async function writeBackAndVerify(tasks){
+  const results = [];
+  for (const t of tasks){
+    let resp = '';
+    try {
+      const r = await fetch(t.url);
+      const txt = await r.text();
+      try {
+        const j = JSON.parse(txt);
+        resp = j && j.status === 'ok' ? 'ok' : ('エラー応答：' + (j && j.message ? j.message : txt.slice(0, 80)));
+      } catch (e) {
+        resp = 'JSON以外の応答：' + txt.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi,'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0, 80);
+      }
+    } catch (e) {
+      resp = '通信失敗：' + e.message;
+    }
+    results.push({ t, resp, verified: null, count: 0 });
+  }
+  if (!tasks.length) return results;
+
+  const needBike = tasks.some(t => t.p.source === 'bike');
+  const needParts = tasks.some(t => t.p.source === 'parts');
+  const [bk, pt] = await Promise.allSettled([
+    needBike ? fetchGAS(GAS_BIKE) : Promise.resolve([]),
+    needParts ? fetchGAS(GAS_PARTS) : Promise.resolve([])
+  ]);
+  const latest = { bike: bk.status === 'fulfilled' ? bk.value : null, parts: pt.status === 'fulfilled' ? pt.value : null };
+  results.forEach(r => {
+    const list = latest[r.t.p.source];
+    if (!list) return; // 読み直せなかった＝確認不能
+    const matches = list.filter(e => String(e.uid) === String(r.t.p.raw.uid));
+    r.count = matches.length;
+    r.verified = matches.length > 0 && matches.every(e => String(e.memo || '').indexOf(r.t.expect) !== -1);
+  });
+  return results;
 }
 
 // ===== メルカリ内でそのまま仕入・費用に使った場合の消込（銀行を経由しない） =====
